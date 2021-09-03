@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "bb9b3074a6b2d8ee6041187cdadb802ff51947852b5039bd86c33485ea189f2d"
+            "sha256": "0131aedc73281edf12ba1880dbf205249e89ae004453a6bf288974a1133b523e"
         },
         "pipfile-spec": 6,
         "requires": {},
@@ -21,6 +21,16 @@
             ],
             "index": "pypi",
             "version": "==0.12.1"
+        },
+        "crcmod": {
+            "hashes": [
+                "sha256:50586ab48981f11e5b117523d97bb70864a2a1af246cf6e4f5c4a21ef4611cd1",
+                "sha256:69a2e5c6c36d0f096a7beb4cd34e5f882ec5fd232efb710cdb85d4ff196bd52e",
+                "sha256:737fb308fa2ce9aed2e29075f0d5980d4a89bfbec48a368c607c5c63b3efb90e",
+                "sha256:dc7051a0db5f2bd48665a990d3ec1cc305a466a77358ca4492826f41f283601e"
+            ],
+            "index": "pypi",
+            "version": "==1.7"
         },
         "dbus-next": {
             "hashes": [
@@ -75,6 +85,14 @@
             ],
             "index": "pypi",
             "version": "==8.3.2"
+        },
+        "toml": {
+            "hashes": [
+                "sha256:806143ae5bfb6a3c6e736a764057db0e6a0e05e338b5630894a5f779cabb4f9b",
+                "sha256:b3bda1d108d5dd99f4a20d24d9c348e91c4db7ab1b749200bded2f839ccbe68f"
+            ],
+            "index": "pypi",
+            "version": "==0.10.2"
         }
     },
     "develop": {
@@ -202,6 +220,7 @@
                 "sha256:806143ae5bfb6a3c6e736a764057db0e6a0e05e338b5630894a5f779cabb4f9b",
                 "sha256:b3bda1d108d5dd99f4a20d24d9c348e91c4db7ab1b749200bded2f839ccbe68f"
             ],
+            "index": "pypi",
             "version": "==0.10.2"
         },
         "tomli": {

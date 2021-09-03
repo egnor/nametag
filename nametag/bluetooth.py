@@ -36,8 +36,8 @@ class Scanner:
         try:
             assert self._scanner is None
             logger.debug("Starting scanner...")
-            new_scanner = bleak.BleakScanner(adapter=self.adapter)
-            self._scanner = await self._exits.enter_async_context(new_scanner)
+            make_scanner = bleak.BleakScanner(adapter=self.adapter)
+            self._scanner = await self._exits.enter_async_context(make_scanner)
             await self._scanner.start()
         except bleak.exc.BleakError as e:
             raise BluetoothError(str(e))
@@ -79,8 +79,8 @@ class Connection:
             assert self._client is None
             t = self.tag
             logger.debug(f"[{t.code}] Connecting ({t.address})...")
-            new_client = bleak.BleakClient(t.bt_internal)
-            self._client = await self._exits.enter_async_context(new_client)
+            make_client = bleak.BleakClient(t.bt_internal)
+            self._client = await self._exits.enter_async_context(make_client)
 
             char_uuid = "0000fff1-0000-1000-8000-00805f9b34fb"
             self._char = self._client.services.get_characteristic(char_uuid)
@@ -120,6 +120,18 @@ class Connection:
 
                 logger.debug(f"{prefix}>> Fulfil: {expect_text}")
 
+    async def readback(self) -> bytes:
+        assert self._client
+        try:
+            data = await self._client.read_gatt_char(self._char)
+        except bleak.exc.BleakError as e:
+            raise BluetoothError(str(e))
+
+        if len(data) != 20:
+            raise BluetoothError("Bad readback length: {len(data)}b")
+        logger.debug(f"[{self.tag.code}]\n      -> Read:   {data.hex()}")
+        return data
+
     def _on_notify(self, handle: int, data: bytes):
         assert handle == self._char.handle
         logger.debug(f"[{self.tag.code}]\n      => Notify: {data.hex()}")
@@ -129,57 +141,82 @@ class Connection:
 class RetryConnection:
     """Wrapper for Connection that reconnects on Bluetooth errors."""
 
-    def __init__(self, tag: ScanTag, *, retry_time=None, fail_time=None):
+    def __init__(
+        self, tag: ScanTag, *, connect_time=None, io_time=None, fail_time=None
+    ):
         self.tag = tag
-        self.retry_time = retry_time
+        self.connect_time = connect_time
+        self.io_time = io_time
         self.fail_time = fail_time
         self._exits = contextlib.AsyncExitStack()
         self._connection: Optional[Connection] = None
+        self._fail_timer_start = 0.0
 
     async def __aenter__(self):
-        try:
-            await asyncio.wait_for(self._establish(), self.retry_time)
-        except asyncio.TimeoutError:
-            logging.warn(f"[{self.tag.code}] Timeout, retrying...")
-        except BluetoothError as e:
-            detail = f"\n{e}".replace("\n", "\n      ")
-            logging.warn(f"[{self.tag.code}] Error, retrying...{detail}")
+        self._fail_timer_start = time.monotonic()
+        await self._connect_if_needed()
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
         await self._exits.aclose()
 
+    async def readback(self):
+        self._fail_timer_start = time.monotonic()
+        while True:
+            await self._connect_if_needed()
+            assert self._connection
+            try:
+                do_readback = self._connection.readback()
+                return await asyncio.wait_for(do_readback, self.io_time)
+            except BluetoothError as e:
+                self._maybe_give_up("Read error", e)
+            except asyncio.TimeoutError as e:
+                self._maybe_give_up(f"Read timeout ({self.io_time:.1f}s)", e)
+
     async def do_steps(self, steps: Iterable[ProtocolStep]):
-        assert self._connection
-        mark_time = time.monotonic()
+        self._fail_timer_start = time.monotonic()
         steps = list(steps)
         while True:
+            await self._connect_if_needed()
+            assert self._connection
             try:
-                await asyncio.wait_for(self._establish(), self.retry_time)
                 for s in steps:
-                    mark_time = time.monotonic()
-                    await asyncio.wait_for(
-                        self._connection.do_steps([s]), self.retry_time
-                    )
+                    do_step = self._connection.do_steps([s])
+                    await asyncio.wait_for(do_step, self.io_time)
+                    self._fail_timer_start = time.monotonic()  # Made progress
                 return
             except BluetoothError as e:
-                error, detail = "Error", f"\n{e}".replace("\n", "\n      ")
-                exc: Exception = e
+                self._maybe_give_up("Write error", e)
             except asyncio.TimeoutError as e:
-                error, detail, exc = f"Timeout ({self.retry_time:.1f}s)", "", e
+                self._maybe_give_up(f"Write timeout ({self.io_time:.1f}s)", e)
 
-            t = time.monotonic() - mark_time
-            error = f"[{self.tag.code}] {error}"
-            if not self.fail_time:
-                logging.warn(f"{error}, retrying...{detail}")
-            elif t < self.fail_time:
-                time_text = f"{t:.1f} < {self.fail_time:.1f}s"
-                logging.warn(f"{error}, retrying ({time_text})...{detail}")
-            else:
-                message = f"{error} ({t:.1f} > {self.fail_time:.1f}s)"
-                raise BluetoothError(message) from exc
+    async def _connect_if_needed(self):
+        if self._connection:
+            return
 
-    async def _establish(self):
-        if not self._connection:
-            new_conn = Connection(self.tag)
-            self._connection = await self._exits.enter_async_context(new_conn)
+        while True:
+            try:
+                make_conn = Connection(self.tag)
+                enter_conn = self._exits.enter_async_context(make_conn)
+                conn = await asyncio.wait_for(enter_conn, self.connect_time)
+                self._connection = conn
+                self._fail_timer_start = time.monotonic()  # Made progress
+                return
+            except BluetoothError as e:
+                self._maybe_give_up("Connection error", e)
+            except asyncio.TimeoutError as e:
+                message = f"Connection timeout ({self.connecttime:.1f}s)"
+                self._maybe_give_up(message, e)
+
+    def _maybe_give_up(self, message: str, exc: Exception):
+        message = f"[{self.tag.code}] {message}"
+        detail = f"\n{exc or ''}".replace("\n", "\n      ")
+        elapsed = time.monotonic() - self._fail_timer_start
+        if not self.fail_time:
+            logging.warn(f"{message}, retrying...{detail}")
+        elif elapsed < self.fail_time:
+            time_text = f"{elapsed:.1f} < {self.fail_time:.1f}s"
+            logging.warn(f"{message}, retrying ({time_text})...{detail}")
+        else:
+            message = f"{message} ({elapsed:.1f} > {self.fail_time:.1f}s)"
+            raise BluetoothError(message) from exc

@@ -5,6 +5,7 @@ import struct
 from functools import reduce
 from typing import Iterable, NamedTuple, Optional
 
+import crcmod  # type: ignore
 import PIL  # type: ignore
 
 
@@ -92,3 +93,23 @@ def set_speed(speed) -> Iterable[ProtocolStep]:
 
 def set_brightness(brightness) -> Iterable[ProtocolStep]:
     return _encode(tag=8, data=struct.pack(">B", brightness))
+
+
+_stash_crc = crcmod.mkCrcFun(0x1CF)  # Koopman's 0xe7
+
+
+def stash_data(data: bytes) -> Iterable[ProtocolStep]:
+    if len(data) > 18:
+        raise ValueError(f"Stash data too long ({len(data)}b): {data.hex()}")
+    data = struct.pack("BB", 0x80 | len(data), _stash_crc(data)) + data
+    return [ProtocolStep(send=data, expect=None)]
+
+
+def stash_from_readback(data: bytes) -> Optional[bytes]:
+    if len(data) > 2:
+        stash_size = data[0] ^ 0x80
+        stash_data = data[2 : 2 + stash_size]
+        if len(stash_data) == stash_size and data[1] == _stash_crc(stash_data):
+            return stash_data
+
+    return None  # Invalid stash

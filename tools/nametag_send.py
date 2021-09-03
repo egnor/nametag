@@ -25,18 +25,22 @@ dev_group.add_argument("--adapter", default="hci0", help="BT interface")
 dev_group.add_argument("--address", default="", help="MAC to address")
 dev_group.add_argument("--code", default="", help="Device code to find")
 
-parser.add_argument("--retry_time", type=float, default=5.0, help="Step retry")
-parser.add_argument("--fail_time", type=float, default=30.0, help="Timeout")
+time_group = parser.add_argument_group("Timeouts")
+time_group.add_argument("--connect_timeout", type=float, default=5.0)
+time_group.add_argument("--io_timeout", type=float, default=2.0)
+time_group.add_argument("--fail_timeout", type=float, default=30.0)
 
-parser.add_argument("--packets", nargs="+", help="Raw packets hex file")
-parser.add_argument("--frames", nargs="+", help="Animation image files")
-parser.add_argument("--frame_msec", type=int, default=200, help="Frame time")
-parser.add_argument("--glyphs", nargs="+", help="Glyph image files")
-parser.add_argument("--mode", type=int, help="Mode to set")
-parser.add_argument("--speed", type=int, help="Speed to set")
-parser.add_argument("--brightness", type=int, help="Brightness to set (0-255)")
+send_group = parser.add_argument_group("Commands to send")
+send_group.add_argument("--packets", nargs="+", help="Raw packets hex file")
+send_group.add_argument("--frames", nargs="+", help="Animation image files")
+send_group.add_argument("--frame_msec", type=int, default=200, help="Per frame")
+send_group.add_argument("--glyphs", nargs="+", help="Glyph image files")
+send_group.add_argument("--mode", type=int, help="Mode to set")
+send_group.add_argument("--scroll_msec", type=int, help="Frame msec")
+send_group.add_argument("--brightness", type=int, help="Brightness (0-255)")
+send_group.add_argument("--stash", help="Hex bytes to stash on device")
+
 args = parser.parse_args()
-
 steps: List[nametag.protocol.ProtocolStep] = []
 
 print("=== Processing send command(s) ===")
@@ -80,19 +84,24 @@ if args.mode is not None:
     print(f"Set mode: {args.mode}")
     steps.extend(nametag.protocol.set_mode(args.mode))
 
-if args.speed is not None:
-    print(f"Set speed: {args.speed}")
-    steps.extend(nametag.protocol.set_speed(args.speed))
+if args.scroll_msec is not None:
+    print(f"Set scroll speed: {args.scroll_msec} msec")
+    steps.extend(nametag.protocol.set_speed(args.scroll_msec))
 
 if args.brightness is not None:
-    print(f"Set brightness: {args.brightness}")
+    print(f"Set brightness: {args.brightness} (of 255)")
     steps.extend(nametag.protocol.set_brightness(args.brightness))
+
+if args.stash is not None:
+    data = bytes.fromhex(args.stash)
+    print(f"Set data stash: {data.hex()}")
+    steps.extend(nametag.protocol.stash_data(data))
 
 if not steps:
     print("No command requests (see --help for options)")
     sys.exit(0)
 
-print(f"{len(steps)} packets")
+print(f"{len(steps)} packets to send")
 print()
 
 
@@ -122,12 +131,20 @@ async def run():
                     print()
 
             if matched:
-                print("=== Connecting to nametag {matched[0].code} ===")
+                print(f"=== Connecting to nametag {matched[0].code} ===")
                 async with nametag.bluetooth.RetryConnection(
                     matched[0],
-                    retry_time=args.retry_time,
-                    fail_time=args.fail_time,
+                    connect_time=args.connect_timeout,
+                    io_time=args.io_timeout,
+                    fail_time=args.fail_timeout,
                 ) as connection:
+                    readback = await connection.readback()
+                    stash = nametag.protocol.stash_from_readback(readback)
+                    if stash:
+                        print(f"Found data stash: {stash.hex()}")
+                    else:
+                        print("(No data stash found)")
+
                     await connection.do_steps(steps)
                 break
 

@@ -46,7 +46,7 @@ def print_devices(devices: List, args: argparse.Namespace):
     matching = [dev for dev in devices if args.name in dev.name]
     print(f'Of {len(devices)} devices, {len(matching)} match "{args.name}":')
     for dev in matching:
-        print(f"=== {dev.name} ({dev.address.lower()}) rssi={dev.rssi} ===")
+        print(f'=== "{dev.name}" ({dev.address.lower()}) rssi={dev.rssi} ===')
         uuids = dev.metadata["uuids"]
         mdata = dev.metadata["manufacturer_data"]
         if uuids:
@@ -60,7 +60,7 @@ def print_devices(devices: List, args: argparse.Namespace):
 
 
 async def find_and_probe_device(args: argparse.Namespace):
-    print(f"Scanning for {args.address}...")
+    print(f"Scanning for {args.address} ({args.time:.1f}s)...")
     async with bleak.BleakScanner(adapter=args.adapter) as scanner:
         await scanner.start()
         start_time = time.monotonic()
@@ -74,7 +74,7 @@ async def find_and_probe_device(args: argparse.Namespace):
 
         if found:
             print(
-                f"Found {found.name} ({found.address}) rssi={found.rssi},"
+                f'Found "{found.name}" ({found.address}) rssi={found.rssi},'
                 " connecting..."
             )
             async with bleak.BleakClient(found) as client:
@@ -111,7 +111,7 @@ async def probe_device(client: bleak.BleakClient, args: argparse.Namespace):
 
 
 async def write_device(client: bleak.BleakClient, args: argparse.Namespace):
-    write_re = re.compile(r"(?:#([0-9]+)|([0-9a-f]+)) *=([ 0-9a-f:]*)")
+    write_re = re.compile(r"(?:#([0-9]+)|([0-9a-f]+)) *[=:]([ 0-9a-f:]*)")
     m = write_re.match(args.write.lower())
     if not m:
         raise ValueError(f'Bad --write format: "{args.write}"')
@@ -153,10 +153,9 @@ async def run():
                 logging.error(f"{exc}, retrying...\n")
 
     else:
-        print(f"Starting scan ({args.time}sec)...")
+        print(f"Starting scan ({args.time:.1f}sec)...")
         devices = await bleak.BleakScanner.discover(
-            adapter=args.adapter,
-            timeout=args.time
+            adapter=args.adapter, timeout=args.time
         )
         print_devices(devices, args)
 
