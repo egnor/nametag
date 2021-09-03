@@ -3,27 +3,27 @@
 import operator
 import struct
 from functools import reduce
-from typing import Collection, Iterable, NamedTuple, Optional, Tuple
+from typing import Iterable, NamedTuple, Optional
 
 import PIL  # type: ignore
 
 
 class ProtocolStep(NamedTuple):
-    send: bytes
-    expect: bytes
+    send: Optional[bytes]
+    expect: Optional[bytes]
 
 
-def _chunks(*, data: bytes, size: int, expect=b"") -> Iterable[ProtocolStep]:
+def _chunks(*, data: bytes, size: int, expect=None) -> Iterable[ProtocolStep]:
     yield from (
         ProtocolStep(
             send=data[s : s + size],
-            expect=b"" if s + size < len(data) else expect,
+            expect=None if s + size < len(data) else expect,
         )
         for s in range(0, len(data), size)
     )
 
 
-def _encode(*, tag: int, data: bytes, expect=b"") -> Iterable[ProtocolStep]:
+def _encode(*, tag: int, data: bytes, expect=None) -> Iterable[ProtocolStep]:
     def escape123(data: bytes) -> bytes:
         data = data.replace(b"\2", b"\2\6")
         data = data.replace(b"\1", b"\2\5")
@@ -38,22 +38,25 @@ def _encode(*, tag: int, data: bytes, expect=b"") -> Iterable[ProtocolStep]:
 
 def _encode_chunked(*, tag: int, data: bytes) -> Iterable[ProtocolStep]:
     for index, (chunk, expect) in enumerate(_chunks(data=data, size=128)):
+        chunk = chunk or b""
         body = struct.pack(">xHHB", len(data), index, len(chunk)) + chunk
         body = body + struct.pack(">B", reduce(operator.xor, body, 0))
         exp = next(iter(_encode(tag=tag, data=struct.pack(">xHx", index))))[0]
         yield from _encode(tag=tag, data=body, expect=exp)
 
 
-def show_glyphs(glyphs: Collection[PIL.Image.Image]) -> Iterable[ProtocolStep]:
-    if not glyphs:
-        raise ValueError("No glyphs to show")
+def show_glyphs(glyphs: Iterable[PIL.Image.Image]) -> Iterable[ProtocolStep]:
+    as_bytes = []
     for i, glyph in enumerate(glyphs):
         if glyph.mode != "1":
             raise ValueError(f'Image mode "{glyph.mode}" instead of "1"')
         if glyph.size[1] > 48 or glyph.size[1] != 12:
             raise ValueError(f"Image size {glyph.size} != ([1-48], 12)")
+        as_bytes.append(glyph.transpose(PIL.Image.TRANSPOSE).tobytes())
 
-    as_bytes = [g.transpose(PIL.Image.TRANSPOSE).tobytes() for g in glyphs]
+    if not as_bytes:
+        raise ValueError("No glyphs to show")
+
     header = struct.pack(
         ">24xB80sH",
         len(as_bytes),
@@ -64,17 +67,19 @@ def show_glyphs(glyphs: Collection[PIL.Image.Image]) -> Iterable[ProtocolStep]:
 
 
 def show_frames(
-    frames: Collection[PIL.Image.Image], *, msec=250
+    frames: Iterable[PIL.Image.Image], *, msec=250
 ) -> Iterable[ProtocolStep]:
-    if not frames:
-        raise ValueError("No frames to show")
-    for i, f in enumerate(frames):
-        if f.size != (48, 12):
-            raise ValueError(f"Frame #{i} size {f.size()} != (48, 12)")
+    as_bytes = []
+    for i, frame in enumerate(frames):
+        if frame.size != (48, 12):
+            raise ValueError(f"Frame #{i} size {frame.size()} != (48, 12)")
+        as_bytes.append(frame.transpose(PIL.Image.TRANSPOSE).tobytes())
 
-    header = struct.pack(">24xBH", len(frames), msec)
-    body = b"".join(f.transpose(PIL.Image.TRANSPOSE).tobytes() for f in frames)
-    return _encode_chunked(tag=4, data=header + body)
+    if not as_bytes:
+        raise ValueError("No frames to show")
+
+    header = struct.pack(">24xBH", len(as_bytes), msec)
+    return _encode_chunked(tag=4, data=header + b"".join(as_bytes))
 
 
 def set_mode(mode) -> Iterable[ProtocolStep]:
