@@ -26,9 +26,9 @@ dev_group.add_argument("--address", default="", help="MAC to address")
 dev_group.add_argument("--code", default="", help="Device code to find")
 
 time_group = parser.add_argument_group("Timeouts")
-time_group.add_argument("--connect_timeout", type=float, default=5.0)
-time_group.add_argument("--io_timeout", type=float, default=2.0)
-time_group.add_argument("--fail_timeout", type=float, default=30.0)
+time_group.add_argument("--connect_timeout", type=float, default=10.0)
+time_group.add_argument("--io_timeout", type=float, default=5.0)
+time_group.add_argument("--fail_timeout", type=float, default=60.0)
 
 send_group = parser.add_argument_group("Commands to send")
 send_group.add_argument("--packets", nargs="+", help="Raw packets hex file")

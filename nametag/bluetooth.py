@@ -158,6 +158,7 @@ class RetryConnection:
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
+        self._connection = None
         await self._exits.aclose()
 
     async def readback(self):
@@ -169,9 +170,9 @@ class RetryConnection:
                 do_readback = self._connection.readback()
                 return await asyncio.wait_for(do_readback, self.io_time)
             except BluetoothError as e:
-                self._maybe_give_up("Read error", e)
+                await self._on_error("Read error", e)
             except asyncio.TimeoutError as e:
-                self._maybe_give_up(f"Read timeout ({self.io_time:.1f}s)", e)
+                await self._on_error(f"Read timeout ({self.io_time:.1f}s)", e)
 
     async def do_steps(self, steps: Iterable[ProtocolStep]):
         self._fail_timer_start = time.monotonic()
@@ -186,9 +187,9 @@ class RetryConnection:
                     self._fail_timer_start = time.monotonic()  # Made progress
                 return
             except BluetoothError as e:
-                self._maybe_give_up("Write error", e)
+                await self._on_error("Write error", e)
             except asyncio.TimeoutError as e:
-                self._maybe_give_up(f"Write timeout ({self.io_time:.1f}s)", e)
+                await self._on_error(f"Write timeout ({self.io_time:.1f}s)", e)
 
     async def _connect_if_needed(self):
         if self._connection:
@@ -203,14 +204,17 @@ class RetryConnection:
                 self._fail_timer_start = time.monotonic()  # Made progress
                 return
             except BluetoothError as e:
-                self._maybe_give_up("Connection error", e)
+                await self._on_error("Connection error", e)
             except asyncio.TimeoutError as e:
-                message = f"Connection timeout ({self.connecttime:.1f}s)"
-                self._maybe_give_up(message, e)
+                message = f"Connection timeout ({self.connect_time:.1f}s)"
+                await self._on_error(message, e)
 
-    def _maybe_give_up(self, message: str, exc: Exception):
+    async def _on_error(self, message: str, exc: Exception):
+        self._connection = None
+        await self._exits.aclose()
+
         message = f"[{self.tag.code}] {message}"
-        detail = f"\n{exc or ''}".replace("\n", "\n      ")
+        detail = f"\n{exc or ''}".replace("\n", "\n      ").rstrip()
         elapsed = time.monotonic() - self._fail_timer_start
         if not self.fail_time:
             logging.warn(f"{message}, retrying...{detail}")
