@@ -48,9 +48,6 @@ async def run():
     parser = argparse.ArgumentParser()
     parser.add_argument("--adapter", default="hci0", help="BT interface")
     parser.add_argument("--code", default="", help="Device code to find")
-    parser.add_argument("--connect_timeout", type=float, default=10.0)
-    parser.add_argument("--io_timeout", type=float, default=5.0)
-    parser.add_argument("--fail_timeout", type=float, default=None)
     parser.add_argument("--update_time", type=float, default=60.0)
     args = parser.parse_args()
 
@@ -67,10 +64,7 @@ async def run():
 
         print(f"Connecting: {found.code} ({found.address})")
         async with nametag.bluetooth.RetryConnection(
-            found,
-            connect_time=args.connect_timeout,
-            io_time=args.io_timeout,
-            fail_time=args.fail_timeout,
+            found, connect_time=10, io_time=5, fail_time=None,
         ) as connection:
             clock = ClockUpdater()
             while True:
