@@ -30,8 +30,16 @@ class _LogFormatter(logging.Formatter):
         return pre + out.strip() + post
 
 
+def _exception_hook(exc_type, exc_value, exc_tb):
+    if issubclass(exc_type, KeyboardInterrupt):
+        print("*** KeyboardInterrupt (^C)! ***", file=sys.stderr)
+        return
+
+    logging.critical("Uncaught exception", exc_info=(exc_type, exc_value, exc_tb))
+
+
 # Initialize on import.
-signal.signal(signal.SIGINT, signal.SIG_DFL)
 _log_handler = logging.StreamHandler(stream=sys.stderr)
 _log_handler.setFormatter(_LogFormatter())
 logging.basicConfig(level=logging.INFO, handlers=[_log_handler])
+sys.excepthook = _exception_hook

@@ -38,6 +38,7 @@ def _encode_chunked(data: bytes, *, tag: int) -> Iterable[ProtocolStep]:
         yield from _encode(body, tag=tag)
 
         (expect,) = _encode(data=struct.pack(">xHx", index), tag=tag)
+        assert isinstance(expect, bytes)
         yield re.compile(re.escape(expect))
 
 

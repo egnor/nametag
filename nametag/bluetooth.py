@@ -6,9 +6,11 @@ import logging
 import re
 import struct
 import time
-from typing import Any, Iterable, List, NamedTuple, Optional, Pattern, Union
+from typing import Any, Iterable, List, Optional, Pattern, Union
 
+import attr
 import bleak  # type: ignore
+import bleak.backends.device  # type: ignore
 import bleak.exc  # type: ignore
 
 logger = logging.getLogger(__name__)
@@ -20,11 +22,12 @@ class BluetoothError(Exception):
     pass
 
 
-class ScanTag(NamedTuple):
+@attr.s(auto_attribs=True)
+class ScanTag:
     address: str
     code: str
     rssi: int
-    bt_internal: Any
+    bt_internal: bleak.backends.device.BLEDevice
 
 
 class Scanner:
@@ -57,7 +60,7 @@ class Scanner:
         for bleak_dev in self._scanner.discovered_devices:
             if bleak_dev.name == "CoolLED":
                 mdata = list(bleak_dev.metadata["manufacturer_data"].items())
-                if len(mdata) == 1 and mdata[0][1][4:] == b"\xff\xff":
+                if len(mdata) == 1 and mdata[0][1][4:6] == b"\xff\xff":
                     dev = ScanTag(
                         address=bleak_dev.address.lower(),
                         code=struct.pack(">H", mdata[0][0]).hex().upper(),
