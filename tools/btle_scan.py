@@ -8,7 +8,7 @@ import sys
 import time
 from bisect import bisect_left
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, Iterable
 
 import bleak  # type: ignore
 import bleak.exc  # type: ignore
@@ -42,21 +42,19 @@ def hex_dump(data: bytes, *, prefix: str = ""):
     print(f'{prefix}[{as_hex}]\n{prefix}"{as_text.rstrip()}"')
 
 
-def print_devices(devices: List, args: argparse.Namespace):
+def print_devices(devices: Iterable[Any], args: argparse.Namespace):
     matching = [dev for dev in devices if args.name in dev.name]
     print(f'Of {len(devices)} devices, {len(matching)} match "{args.name}":')
     for dev in matching:
         print(f'=== "{dev.name}" ({dev.address.lower()}) rssi={dev.rssi} ===')
-        uuids = dev.metadata["uuids"]
-        mdata = dev.metadata["manufacturer_data"]
+        uuids = dev.metadata.get("uuids", [])
+        mdata = dev.metadata.get("manufacturer_data", {})
         if uuids:
-            print(f"Found {len(uuids)} service(s):")
-            print("".join(f"  {short_uuid(u)}\n" for u in uuids))
-
+            print(f"Service(s): ", ", ".join(short_uuid(u) for u in uuids))
         for mkey, mdata in mdata.items():
             print(f"Manufacturer data: {mkey:04x}")
             hex_dump(mdata, prefix="  ")
-            print()
+        print()
 
 
 async def find_and_probe_device(args: argparse.Namespace):
@@ -66,22 +64,23 @@ async def find_and_probe_device(args: argparse.Namespace):
         start_time = time.monotonic()
         match = args.address.lower()
         found = None
-        while not found and time.monotonic() < start_time + args.time:
+        while True:
             for scan_dev in scanner.discovered_devices:
                 if scan_dev.address.lower() == match:
-                    found = scan_dev
-            await asyncio.sleep(0.1)
+                    print(
+                        f'Found "{found.name}" ({found.address})'
+                        f" rssi={found.rssi}, connecting..."
+                    )
+                    async with bleak.BleakClient(found) as client:
+                        await probe_device(client, args)
+                    break
 
-        if found:
-            print(
-                f'Found "{found.name}" ({found.address}) rssi={found.rssi},'
-                " connecting..."
-            )
-            async with bleak.BleakClient(found) as client:
-                await probe_device(client, args)
-        else:
-            print(f"Not found after {time.monotonic() - start_time:.1f}s")
-            print()
+            elapsed = time.monotonic() - start_time
+            if elapsed > args.time:
+                print(f"Not found after {elapsed:.1f}s")
+                print()
+
+            await asyncio.sleep(0.1)
 
 
 async def probe_device(client: bleak.BleakClient, args: argparse.Namespace):
@@ -90,7 +89,6 @@ async def probe_device(client: bleak.BleakClient, args: argparse.Namespace):
 
     print("Discovering services...")
     collection = await client.get_services()
-    print(f"Found {len(collection.services)} service(s):")
 
     def obj_text(obj):
         hex, desc = f"({short_uuid(obj.uuid)})", obj.description
@@ -136,7 +134,7 @@ async def run():
     parser = argparse.ArgumentParser()
     parser.add_argument("--adapter", default="hci0", help="BT interface")
     parser.add_argument("--time", type=int, default=2, help="Scan seconds")
-    parser.add_argument("--name", default="CoolLED", help="Name substring")
+    parser.add_argument("--name", default="", help="Name substring")
     parser.add_argument("--address", help="MAC of device to probe")
     parser.add_argument("--write", help="'uuid=hexbytes' or '#handle=hexbytes'")
     args = parser.parse_args()
