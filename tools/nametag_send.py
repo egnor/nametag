@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import logging
+import re
 import sys
 import time
 from pathlib import Path
@@ -52,11 +53,9 @@ if args.packets:
             for line in hex_file:
                 line = line.strip().replace(":", " ")
                 if line:
-                    data = bytes.fromhex(line)
-                    step = nametag.protocol.ProtocolStep(data, None)
+                    steps.append(bytes.fromhex(line))
                 else:
-                    step = nametag.protocol.ProtocolStep(None, b"")
-                steps.append(step)
+                    steps.append(re.compile(b".*"))
 
 if args.frames:
     frames: List[PIL.Image.Image] = []

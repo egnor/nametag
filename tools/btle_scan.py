@@ -8,7 +8,7 @@ import sys
 import time
 from bisect import bisect_left
 from pathlib import Path
-from typing import Any, Dict, Iterable
+from typing import Any, Dict, List
 
 import bleak  # type: ignore
 import bleak.exc  # type: ignore
@@ -42,7 +42,7 @@ def hex_dump(data: bytes, *, prefix: str = ""):
     print(f'{prefix}[{as_hex}]\n{prefix}"{as_text.rstrip()}"')
 
 
-def print_devices(devices: Iterable[Any], args: argparse.Namespace):
+def print_devices(devices: List[Any], args: argparse.Namespace):
     matching = [dev for dev in devices if args.name in dev.name]
     print(f'Of {len(devices)} devices, {len(matching)} match "{args.name}":')
     for dev in matching:
@@ -63,15 +63,14 @@ async def find_and_probe_device(args: argparse.Namespace):
         await scanner.start()
         start_time = time.monotonic()
         match = args.address.lower()
-        found = None
         while True:
-            for scan_dev in scanner.discovered_devices:
-                if scan_dev.address.lower() == match:
+            for dev in scanner.discovered_devices:
+                if dev.address.lower() == match:
                     print(
-                        f'Found "{found.name}" ({found.address})'
-                        f" rssi={found.rssi}, connecting..."
+                        f'Found "{dev.name}" ({dev.address})'
+                        f" rssi={dev.rssi}, connecting..."
                     )
-                    async with bleak.BleakClient(found) as client:
+                    async with bleak.BleakClient(dev) as client:
                         await probe_device(client, args)
                     break
 

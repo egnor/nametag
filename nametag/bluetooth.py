@@ -3,16 +3,17 @@
 import asyncio
 import contextlib
 import logging
+import re
 import struct
 import time
-from typing import Any, Iterable, List, NamedTuple, Optional
+from typing import Any, Iterable, List, NamedTuple, Optional, Pattern, Union
 
 import bleak  # type: ignore
 import bleak.exc  # type: ignore
 
-from .protocol import ProtocolStep
-
 logger = logging.getLogger(__name__)
+
+ProtocolStep = Union[bytes, Optional[Pattern[bytes]]]
 
 
 class BluetoothError(Exception):
@@ -59,7 +60,7 @@ class Scanner:
                 if len(mdata) == 1 and mdata[0][1][4:] == b"\xff\xff":
                     dev = ScanTag(
                         address=bleak_dev.address.lower(),
-                        code=struct.pack("<H", mdata[0][0]).hex().upper(),
+                        code=struct.pack(">H", mdata[0][0]).hex().upper(),
                         rssi=bleak_dev.rssi,
                         bt_internal=bleak_dev,
                     )
@@ -101,24 +102,26 @@ class Connection:
         assert self._client
         prefix = f"[{self.tag.code}]\n      "
         for step in steps:
-            if step.send:
-                logger.debug(f"{prefix}Sending: {step.send.hex()}")
+            if isinstance(step, bytes):
+                logger.debug(f"{prefix}Sending: {step.hex()}")
                 while self._notified.qsize():
                     self._notified.get_nowait()
                 try:
-                    await self._client.write_gatt_char(self._char, step.send)
+                    await self._client.write_gatt_char(self._char, step)
                 except bleak.exc.BleakError as e:
                     raise BluetoothError(str(e))
 
-            if step.expect is not None:
-                expect_text = step.expect.hex() if step.expect else "[any]"
-                logger.debug(f"{prefix}-- Expect: {expect_text}")
+            elif isinstance(step, re.Pattern):
+                logger.debug(f"{prefix}-- Expect: {step.pattern!r}")
                 while True:
                     data = await self._notified.get()
-                    if step.expect in (b"", data):
+                    if step.fullmatch(data):
                         break
 
-                logger.debug(f"{prefix}>> Fulfil: {expect_text}")
+                logger.debug(f"{prefix}>> Fulfil: {step.pattern!r}")
+
+            else:
+                raise ValueError(f"Bad protocol step: {step}")
 
     async def readback(self) -> bytes:
         assert self._client
