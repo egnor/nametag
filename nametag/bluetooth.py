@@ -56,7 +56,7 @@ class Scanner:
         for bleak_dev in self._scanner.discovered_devices:
             if bleak_dev.name == "CoolLED":
                 mdata = list(bleak_dev.metadata["manufacturer_data"].items())
-                if len(mdata) == 1 and mdata[0][1][2:] == b"\x02\x22\xff\xff":
+                if len(mdata) == 1 and mdata[0][1][4:] == b"\xff\xff":
                     dev = ScanTag(
                         address=bleak_dev.address.lower(),
                         code=struct.pack("<H", mdata[0][0]).hex().upper(),
