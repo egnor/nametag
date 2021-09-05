@@ -22,7 +22,7 @@ class BluetoothError(Exception):
     pass
 
 
-@attr.s(auto_attribs=True)
+@attr.define
 class ScanTag:
     address: str
     code: str
