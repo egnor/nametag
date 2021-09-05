@@ -2,20 +2,21 @@
 
 import asyncio
 import contextlib
+import datetime
 import logging
 import re
 import struct
 import time
-from typing import Any, Iterable, List, Optional, Pattern, Union
+from typing import Any, Iterable, List, Optional, Pattern
 
 import attr
 import bleak  # type: ignore
 import bleak.backends.device  # type: ignore
 import bleak.exc  # type: ignore
 
-logger = logging.getLogger(__name__)
+from .protocol import ProtocolStep
 
-ProtocolStep = Union[bytes, Optional[Pattern[bytes]]]
+logger = logging.getLogger(__name__)
 
 
 class BluetoothError(Exception):
@@ -27,7 +28,7 @@ class ScanTag:
     address: str
     code: str
     rssi: int
-    bt_internal: bleak.backends.device.BLEDevice
+    _device: bleak.backends.device.BLEDevice
 
 
 class Scanner:
@@ -65,7 +66,7 @@ class Scanner:
                         address=bleak_dev.address.lower(),
                         code=struct.pack(">H", mdata[0][0]).hex().upper(),
                         rssi=bleak_dev.rssi,
-                        bt_internal=bleak_dev,
+                        device=bleak_dev,
                     )
                     out.append(dev)
         return out
@@ -83,7 +84,7 @@ class Connection:
             assert self._client is None
             t = self.tag
             logger.debug(f"[{t.code}] Connecting ({t.address})...")
-            make_client = bleak.BleakClient(t.bt_internal)
+            make_client = bleak.BleakClient(t._device)
             self._client = await self._exits.enter_async_context(make_client)
 
             char_uuid = "0000fff1-0000-1000-8000-00805f9b34fb"
@@ -115,13 +116,16 @@ class Connection:
                     raise BluetoothError(str(e))
 
             elif isinstance(step, re.Pattern):
-                logger.debug(f"{prefix}-- Expect: {step.pattern!r}")
-                while True:
-                    data = await self._notified.get()
-                    if step.fullmatch(data):
-                        break
+                pattern_text = str(step.pattern)[2:-1]
+                logger.debug(f"{prefix}-- Expect: /{pattern_text}/")
+                while not step.fullmatch(await self._notified.get()):
+                    pass
 
-                logger.debug(f"{prefix}>> Fulfil: {step.pattern!r}")
+                logger.debug(f"{prefix}>> Fulfil: /{pattern_text}/")
+
+            elif isinstance(step, datetime.timedelta):
+                logger.debug(f"{prefix}.. Delay: {step.total_seconds():.1f}s")
+                await asyncio.sleep(step.total_seconds())
 
             else:
                 raise ValueError(f"Bad protocol step: {step}")
@@ -148,12 +152,17 @@ class RetryConnection:
     """Wrapper for Connection that reconnects on Bluetooth errors."""
 
     def __init__(
-        self, tag: ScanTag, *, connect_time=None, io_time=None, fail_time=None
+        self,
+        tag: ScanTag,
+        *,
+        connect_timeout=None,
+        step_timeout=None,
+        fail_timeout=None,
     ):
         self.tag = tag
-        self.connect_time = connect_time
-        self.io_time = io_time
-        self.fail_time = fail_time
+        self.connect_timeout = connect_timeout
+        self.step_timeout = step_timeout
+        self.fail_timeout = fail_timeout
         self._exits = contextlib.AsyncExitStack()
         self._connection: Optional[Connection] = None
         self._fail_timer_start = 0.0
@@ -174,11 +183,12 @@ class RetryConnection:
             assert self._connection
             try:
                 do_readback = self._connection.readback()
-                return await asyncio.wait_for(do_readback, self.io_time)
+                return await asyncio.wait_for(do_readback, self.step_timeout)
             except BluetoothError as e:
                 await self._on_error("Read error", e)
             except asyncio.TimeoutError as e:
-                await self._on_error(f"Read timeout ({self.io_time:.1f}s)", e)
+                message = f"Readback timeout ({self.step_timeout:.1f}s)"
+                await self._on_error(message, e)
 
     async def do_steps(self, steps: Iterable[ProtocolStep]):
         self._fail_timer_start = time.monotonic()
@@ -189,13 +199,14 @@ class RetryConnection:
             try:
                 for s in steps:
                     do_step = self._connection.do_steps([s])
-                    await asyncio.wait_for(do_step, self.io_time)
+                    await asyncio.wait_for(do_step, self.step_timeout)
                     self._fail_timer_start = time.monotonic()  # Made progress
                 return
             except BluetoothError as e:
                 await self._on_error("Write error", e)
             except asyncio.TimeoutError as e:
-                await self._on_error(f"Write timeout ({self.io_time:.1f}s)", e)
+                message = f"Write timeout ({self.step_timeout:.1f}s)"
+                await self._on_error(message, e)
 
     async def _connect_if_needed(self):
         if self._connection:
@@ -205,14 +216,14 @@ class RetryConnection:
             try:
                 make_conn = Connection(self.tag)
                 enter_conn = self._exits.enter_async_context(make_conn)
-                conn = await asyncio.wait_for(enter_conn, self.connect_time)
+                conn = await asyncio.wait_for(enter_conn, self.connect_timeout)
                 self._connection = conn
                 self._fail_timer_start = time.monotonic()  # Made progress
                 return
             except BluetoothError as e:
                 await self._on_error("Connection error", e)
             except asyncio.TimeoutError as e:
-                message = f"Connection timeout ({self.connect_time:.1f}s)"
+                message = f"Connection timeout ({self.connect_timeout:.1f}s)"
                 await self._on_error(message, e)
 
     async def _on_error(self, message: str, exc: Exception):
@@ -222,11 +233,11 @@ class RetryConnection:
         message = f"[{self.tag.code}] {message}"
         detail = f"\n{exc or ''}".replace("\n", "\n      ").rstrip()
         elapsed = time.monotonic() - self._fail_timer_start
-        if not self.fail_time:
+        if not self.fail_timeout:
             logging.warn(f"{message}, retrying...{detail}")
-        elif elapsed < self.fail_time:
-            time_text = f"{elapsed:.1f} < {self.fail_time:.1f}s"
+        elif elapsed < self.fail_timeout:
+            time_text = f"{elapsed:.1f} < {self.fail_timeout:.1f}s"
             logging.warn(f"{message}, retrying ({time_text})...{detail}")
         else:
-            message = f"{message} ({elapsed:.1f} > {self.fail_time:.1f}s)"
+            message = f"{message} ({elapsed:.1f} > {self.fail_timeout:.1f}s)"
             raise BluetoothError(message) from exc

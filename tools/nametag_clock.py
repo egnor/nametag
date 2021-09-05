@@ -42,9 +42,9 @@ class ClockUpdater:
             draw.text(center_xy, text, fill=1, font=self.font, anchor="mm")
 
         return nametag.protocol.show_frames(self.images, msec=500)
-        # return list(nametag.protocol.set_brightness(255)) + list(
-        #     nametag.protocol.show_frames(self.images, msec=500)
-        # )
+        return list(nametag.protocol.set_brightness(255)) + list(
+            nametag.protocol.show_frames(self.images, msec=500)
+        )
 
 
 async def run():

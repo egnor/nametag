@@ -40,11 +40,24 @@ send_group.add_argument("--mode", type=int, help="Mode to set")
 send_group.add_argument("--scroll_msec", type=int, help="Frame msec")
 send_group.add_argument("--brightness", type=int, help="Brightness (0-255)")
 send_group.add_argument("--stash", help="Hex bytes to stash on device")
+send_group.add_argument("--repeat", type=int, default=1, help="Times to loop")
 
 args = parser.parse_args()
 steps: List[nametag.protocol.ProtocolStep] = []
 
 print("=== Processing send command(s) ===")
+
+if args.mode is not None:
+    print(f"Set mode: {args.mode}")
+    steps.extend(nametag.protocol.set_mode(args.mode))
+
+if args.scroll_msec is not None:
+    print(f"Set scroll speed: {args.scroll_msec} msec")
+    steps.extend(nametag.protocol.set_speed(args.scroll_msec))
+
+if args.brightness is not None:
+    print(f"Set brightness: {args.brightness} (of 255)")
+    steps.extend(nametag.protocol.set_brightness(args.brightness))
 
 if args.packets:
     for packets_path in args.packets:
@@ -78,18 +91,6 @@ if args.glyphs:
 
     steps.extend(nametag.protocol.show_glyphs(glyphs))
     print()
-
-if args.mode is not None:
-    print(f"Set mode: {args.mode}")
-    steps.extend(nametag.protocol.set_mode(args.mode))
-
-if args.scroll_msec is not None:
-    print(f"Set scroll speed: {args.scroll_msec} msec")
-    steps.extend(nametag.protocol.set_speed(args.scroll_msec))
-
-if args.brightness is not None:
-    print(f"Set brightness: {args.brightness} (of 255)")
-    steps.extend(nametag.protocol.set_brightness(args.brightness))
 
 if args.stash is not None:
     data = bytes.fromhex(args.stash)
@@ -138,13 +139,14 @@ async def run():
                     fail_time=args.fail_timeout,
                 ) as connection:
                     readback = await connection.readback()
-                    stash = nametag.protocol.stash_from_readback(readback)
+                    stash = nametag.protocol.unstash_readback(readback)
                     if stash:
                         print(f"Found data stash: {stash.hex()}")
                     else:
                         print("(No data stash found)")
 
-                    await connection.do_steps(steps)
+                    for r in range(args.repeat):
+                        await connection.do_steps(steps)
                 break
 
             await asyncio.sleep(0.1)

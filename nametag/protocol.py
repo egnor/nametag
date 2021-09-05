@@ -1,15 +1,19 @@
 # Protocol encoding for the nametag (see bluetooth.py for hardware access)
 
+import datetime
 import operator
 import re
 import struct
 from functools import reduce
 from typing import Iterable, Optional, Pattern, Union
 
+import attr
 import crcmod  # type: ignore
 import PIL  # type: ignore
 
-ProtocolStep = Union[bytes, Pattern[bytes]]
+# TODO TODO -- replace ProtocolStep with an attr struct
+# that includes list of packets, regexes for success / retry, delay
+ProtocolStep = Union[bytes, Pattern[bytes], datetime.timedelta]
 
 
 def _chunks(data: bytes, *, chunk_size: int) -> Iterable[bytes]:
@@ -17,29 +21,33 @@ def _chunks(data: bytes, *, chunk_size: int) -> Iterable[bytes]:
         yield data[s : s + chunk_size]
 
 
-def _encode(data: bytes, *, tag: int) -> Iterable[ProtocolStep]:
+def _encode(body: bytes, *, tag: int) -> bytes:
     def escape123(data: bytes) -> bytes:
         data = data.replace(b"\2", b"\2\6")
         data = data.replace(b"\1", b"\2\5")
         data = data.replace(b"\3", b"\2\7")
         return data
 
-    typed = struct.pack(">B", tag) + data
+    typed = struct.pack(">B", tag) + body
     sized_typed = struct.pack(">H", len(typed)) + typed
-    escaped_sized_typed = b"\1" + escape123(sized_typed) + b"\3"
-    return _chunks(escaped_sized_typed, chunk_size=20)
+    return b"\1" + escape123(sized_typed) + b"\3"
 
 
-def _encode_chunked(data: bytes, *, tag: int) -> Iterable[ProtocolStep]:
+def _command(body: bytes, *, tag: int) -> Iterable[ProtocolStep]:
+    for packet in _chunks(_encode(body, tag=tag), chunk_size=20):
+        yield packet
+
+
+def _bulk_command(body: bytes, *, tag: int) -> Iterable[ProtocolStep]:
     byte_re = b"(\2[\5\6\7]|[^\2])"  # one byte encoded with escape123()
-    for index, chunk in enumerate(_chunks(data, chunk_size=128)):
-        body = struct.pack(">xHHB", len(data), index, len(chunk)) + chunk
-        body = body + struct.pack(">B", reduce(operator.xor, body, 0))
-        yield from _encode(body, tag=tag)
+    for index, chunk in enumerate(_chunks(body, chunk_size=128)):
+        chunk_body = struct.pack(">xHHB", len(body), index, len(chunk)) + chunk
+        chunk_body += struct.pack(">B", reduce(operator.xor, chunk_body, 0))
+        yield from _command(chunk_body, tag=tag)
 
-        (expect,) = _encode(data=struct.pack(">xHx", index), tag=tag)
-        assert isinstance(expect, bytes)
-        yield re.compile(re.escape(expect))
+        confirm_body = struct.pack(">xHx", index)
+        confirm_command = _encode(confirm_body, tag=tag)
+        yield re.compile(re.escape(confirm_command))
 
 
 def show_glyphs(glyphs: Iterable[PIL.Image.Image]) -> Iterable[ProtocolStep]:
@@ -60,7 +68,7 @@ def show_glyphs(glyphs: Iterable[PIL.Image.Image]) -> Iterable[ProtocolStep]:
         bytes(len(b) for b in as_bytes),
         sum(len(b) for b in as_bytes),
     )
-    return _encode_chunked(tag=2, data=header + b"".join(as_bytes))
+    return _bulk_command(header + b"".join(as_bytes), tag=2)
 
 
 def show_frames(
@@ -76,19 +84,22 @@ def show_frames(
         raise ValueError("No frames to show")
 
     header = struct.pack(">24xBH", len(as_bytes), msec)
-    return _encode_chunked(tag=4, data=header + b"".join(as_bytes))
+    return _bulk_command(header + b"".join(as_bytes), tag=4)
 
 
 def set_mode(mode) -> Iterable[ProtocolStep]:
-    return _encode(struct.pack(">B", mode), tag=6)
+    yield from _command(struct.pack(">B", mode), tag=6)
+    yield datetime.timedelta(seconds=0.5)
 
 
 def set_speed(speed) -> Iterable[ProtocolStep]:
-    return _encode(data=struct.pack(">B", speed), tag=7)
+    yield from _command(struct.pack(">B", speed), tag=7)
+    yield datetime.timedelta(seconds=0.5)
 
 
 def set_brightness(brightness) -> Iterable[ProtocolStep]:
-    return _encode(data=struct.pack(">B", brightness), tag=8)
+    yield from _command(struct.pack(">B", brightness), tag=8)
+    yield datetime.timedelta(seconds=0.5)
 
 
 _stash_crc = crcmod.mkCrcFun(0x1CF)  # Koopman's 0xe7
@@ -98,10 +109,10 @@ def stash_data(data: bytes) -> Iterable[ProtocolStep]:
     if len(data) > 18:
         raise ValueError(f"Stash data too long ({len(data)}b): {data.hex()}")
     data = struct.pack("BB", 0x80 | len(data), _stash_crc(data)) + data
-    return [data]
+    yield data
 
 
-def stash_from_readback(data: bytes) -> Optional[bytes]:
+def unstash_readback(data: bytes) -> Optional[bytes]:
     if len(data) > 2:
         stash_size = data[0] ^ 0x80
         stash_data = data[2 : 2 + stash_size]
