@@ -105,41 +105,49 @@ class Connection:
     async def do_steps(self, steps: Iterable[ProtocolStep]):
         assert self._client
         prefix = f"[{self.tag.code}]\n      "
+
         for step in steps:
-            if isinstance(step, bytes):
-                logger.debug(f"{prefix}Sending: {step.hex()}")
+            while True:
                 while self._notified.qsize():
                     self._notified.get_nowait()
-                try:
-                    await self._client.write_gatt_char(self._char, step)
-                except bleak.exc.BleakError as e:
-                    raise BluetoothError(str(e))
 
-            elif isinstance(step, re.Pattern):
-                pattern_text = str(step.pattern)[2:-1]
-                logger.debug(f"{prefix}-- Expect: /{pattern_text}/")
-                while not step.fullmatch(await self._notified.get()):
-                    pass
+                for packet in step.packets:
+                    try:
+                        logger.debug(f"{prefix}Sending: {step.hex()}")
+                        await self._client.write_gatt_char(self._char, step)
+                    except bleak.exc.BleakError as e:
+                        raise BluetoothError(str(e))
 
-                logger.debug(f"{prefix}>> Fulfil: /{pattern_text}/")
+                rt = lambda re: str(re.pattern)[2:-1]
+                if step.confirm_regex:
+                    logger.debug(f"{prefix}-- Expect: {rt(step.confirm_regex)}")
+                if step.retry_regex:
+                    logger.debug(f"{prefix}-- Expect: {rt(step.retry_regex)}")
+                while step.confirm_regex:
+                    logger.debug(f"{prefix}-- Expect: {confirm_text}")
+                    while True:
+                        rep = await self._notified.get()
+                        if step.confirm_regex.fullmatch(rep):
+                            logger.debug(f"{prefix}>> Fulfil: /{confirm_text}/")
+                            break
+                        if step.retry_regex and step.retry_regex.fullmatch(rep):
+                            logger.debug(f"{prefix}>> Fulfil: /{retry_text}/")
+                            break
 
-            elif isinstance(step, datetime.timedelta):
-                logger.debug(f"{prefix}.. Delay: {step.total_seconds():.1f}s")
-                await asyncio.sleep(step.total_seconds())
-
-            else:
-                raise ValueError(f"Bad protocol step: {step}")
+                if step.delay_after:
+                    logger.debug(f"{prefix}-- Delay:  {step.delay_after:.1f}s")
+                    await asyncio.sleep(step.delay_after)
 
     async def readback(self) -> bytes:
         assert self._client
         try:
             data = await self._client.read_gatt_char(self._char)
+            logger.debug(f"[{self.tag.code}]\n      -> Read:   {data.hex()}")
         except bleak.exc.BleakError as e:
             raise BluetoothError(str(e))
 
         if len(data) != 20:
             raise BluetoothError("Bad readback length: {len(data)}b")
-        logger.debug(f"[{self.tag.code}]\n      -> Read:   {data.hex()}")
         return data
 
     def _on_notify(self, handle: int, data: bytes):
