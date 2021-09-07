@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -u
 
 import argparse
 import asyncio
@@ -28,7 +28,7 @@ dev_group.add_argument("--code", default="", help="Device code to find")
 
 time_group = parser.add_argument_group("Timeouts")
 time_group.add_argument("--connect_timeout", type=float, default=10.0)
-time_group.add_argument("--io_timeout", type=float, default=5.0)
+time_group.add_argument("--step_timeout", type=float, default=5.0)
 time_group.add_argument("--fail_timeout", type=float, default=60.0)
 
 send_group = parser.add_argument_group("Commands to send")
@@ -62,13 +62,15 @@ if args.brightness is not None:
 if args.packets:
     for packets_path in args.packets:
         print(f"Raw packets: {packets_path}")
+        steps.append(nametag.protocol.ProtocolStep(packets=[]))
         with open(packets_path) as hex_file:
             for line in hex_file:
                 line = line.strip().replace(":", " ")
                 if line:
-                    steps.append(bytes.fromhex(line))
+                    steps[-1].packets.append(bytes.fromhex(line))
                 else:
-                    steps.append(re.compile(b".*"))
+                    steps[-1].confirm_regex = re.compile(b".*")
+                    steps.append(nametag.protocol.ProtocolStep(packets=[]))
 
 if args.frames:
     frames: List[PIL.Image.Image] = []
@@ -134,9 +136,9 @@ async def run():
                 print(f"=== Connecting to nametag {matched[0].code} ===")
                 async with nametag.bluetooth.RetryConnection(
                     matched[0],
-                    connect_time=args.connect_timeout,
-                    io_time=args.io_timeout,
-                    fail_time=args.fail_timeout,
+                    connect_timeout=args.connect_timeout,
+                    step_timeout=args.step_timeout,
+                    fail_timeout=args.fail_timeout,
                 ) as connection:
                     readback = await connection.readback()
                     stash = nametag.protocol.unstash_readback(readback)

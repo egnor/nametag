@@ -77,7 +77,7 @@ class Connection:
         self.tag = tag
         self._exits = contextlib.AsyncExitStack()
         self._client: Optional[bleak.BleakClient] = None
-        self._notified: asyncio.Queue[bytes] = asyncio.Queue()
+        self._received: asyncio.Queue[bytes] = asyncio.Queue()
 
     async def __aenter__(self):
         try:
@@ -108,35 +108,34 @@ class Connection:
 
         for step in steps:
             while True:
-                while self._notified.qsize():
-                    self._notified.get_nowait()
+                while self._received.qsize():
+                    self._received.get_nowait()
 
                 for packet in step.packets:
                     try:
-                        logger.debug(f"{prefix}Sending: {step.hex()}")
-                        await self._client.write_gatt_char(self._char, step)
+                        logger.debug(f"{prefix}Sending: {packet.hex()}")
+                        await self._client.write_gatt_char(self._char, packet)
                     except bleak.exc.BleakError as e:
                         raise BluetoothError(str(e))
 
-                rt = lambda re: str(re.pattern)[2:-1]
                 if step.confirm_regex:
-                    logger.debug(f"{prefix}-- Expect: {rt(step.confirm_regex)}")
-                if step.retry_regex:
-                    logger.debug(f"{prefix}-- Expect: {rt(step.retry_regex)}")
-                while step.confirm_regex:
+                    confirm_text = f"/{str(step.confirm_regex.pattern)[2:-1]}/"
                     logger.debug(f"{prefix}-- Expect: {confirm_text}")
-                    while True:
-                        rep = await self._notified.get()
-                        if step.confirm_regex.fullmatch(rep):
-                            logger.debug(f"{prefix}>> Fulfil: /{confirm_text}/")
-                            break
-                        if step.retry_regex and step.retry_regex.fullmatch(rep):
-                            logger.debug(f"{prefix}>> Fulfil: /{retry_text}/")
-                            break
+                    reply = await self._received.get()
+                    if step.confirm_regex.fullmatch(reply):
+                        logger.debug(f"{prefix}>> Fulfil: {confirm_text}")
+                    elif step.retry_regex and step.retry_regex.fullmatch(reply):
+                        text = f"/{str(step.retry_regex.pattern)[2:-1]}/"
+                        logger.debug(f"{prefix}** Retry:  {text}")
+                        continue
+                    else:
+                        raise BluetoothError("Bad reply: {reply.hex()}")
 
                 if step.delay_after:
-                    logger.debug(f"{prefix}-- Delay:  {step.delay_after:.1f}s")
+                    logger.debug(f"{prefix}-- Delay: {step.delay_after:.1f}s")
                     await asyncio.sleep(step.delay_after)
+
+                break
 
     async def readback(self) -> bytes:
         assert self._client
@@ -153,7 +152,7 @@ class Connection:
     def _on_notify(self, handle: int, data: bytes):
         assert handle == self._char.handle
         logger.debug(f"[{self.tag.code}]\n      => Notify: {data.hex()}")
-        self._notified.put_nowait(data)
+        self._received.put_nowait(data)
 
 
 class RetryConnection:
@@ -211,7 +210,7 @@ class RetryConnection:
                     self._fail_timer_start = time.monotonic()  # Made progress
                 return
             except BluetoothError as e:
-                await self._on_error("Write error", e)
+                await self._on_error("Bluetooth error", e)
             except asyncio.TimeoutError as e:
                 message = f"Write timeout ({self.step_timeout:.1f}s)"
                 await self._on_error(message, e)

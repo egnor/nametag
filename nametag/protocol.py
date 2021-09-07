@@ -1,16 +1,16 @@
 # Protocol encoding for the nametag (see bluetooth.py for hardware access)
 
-import attr
 import datetime
 import operator
 import re
 import struct
 from functools import reduce
-from typing import Iterable, Optional, Pattern, Union
+from typing import Iterable, List, Optional, Pattern
 
 import attr
 import crcmod  # type: ignore
 import PIL  # type: ignore
+
 
 @attr.define
 class ProtocolStep:
@@ -48,9 +48,15 @@ def _bulk_steps(body: bytes, *, tag: int) -> Iterable[ProtocolStep]:
         chunk_body += struct.pack(">B", reduce(operator.xor, chunk_body, 0))
         chunk_step = _encode_step(chunk_body, tag=tag)
 
-        confirm_body = struct.pack(">xHx", index)
-        confirm_packet = _encode(confirm_body, tag=tag)
-        chunk_step.confirm_regex = re.compile(re.escape(confirm_packet))
+        confirm = _encode(struct.pack(">xHx", index), tag=tag)
+        chunk_step.confirm_regex = re.compile(re.escape(confirm))
+
+        assert confirm[-2:] == b"\0\3"
+        chunk_step.retry_regex = re.compile(
+            re.escape(confirm[:-2])
+            + b"([^\0]|\2[\5\6\7])"
+            + re.escape(confirm[-1:])
+        )
         yield chunk_step
 
 
