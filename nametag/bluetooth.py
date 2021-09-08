@@ -44,7 +44,7 @@ class Scanner:
             make_scanner = bleak.BleakScanner(adapter=self.adapter)
             self._scanner = await self._exits.enter_async_context(make_scanner)
             await self._scanner.start()
-        except bleak.exc.BleakError as e:
+        except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
             raise BluetoothError(str(e))
         return self
 
@@ -52,7 +52,7 @@ class Scanner:
         try:
             logger.debug("Stopping scanner...")
             await self._exits.aclose()
-        except bleak.exc.BleakError as e:
+        except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
             raise BluetoothError(str(e))
 
     def visible_tags(self) -> List[ScanTag]:
@@ -91,7 +91,7 @@ class Connection:
             self._char = self._client.services.get_characteristic(char_uuid)
             await self._client.start_notify(self._char, self._on_notify)
             logger.debug(f"[{t.code}] Connected and subscribed")
-        except bleak.exc.BleakError as e:
+        except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
             raise BluetoothError(str(e))
         return self
 
@@ -99,7 +99,7 @@ class Connection:
         try:
             logger.debug(f"[{self.tag.code}] Disconnecting...")
             await self._exits.aclose()
-        except bleak.exc.BleakError as e:
+        except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
             raise BluetoothError(str(e))
 
     async def do_steps(self, steps: Iterable[ProtocolStep]):
@@ -115,7 +115,7 @@ class Connection:
                     try:
                         logger.debug(f"{prefix}Sending: {packet.hex()}")
                         await self._client.write_gatt_char(self._char, packet)
-                    except bleak.exc.BleakError as e:
+                    except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
                         raise BluetoothError(str(e))
 
                 if step.confirm_regex:
@@ -142,7 +142,7 @@ class Connection:
         try:
             data = await self._client.read_gatt_char(self._char)
             logger.debug(f"[{self.tag.code}]\n      -> Read:   {data.hex()}")
-        except bleak.exc.BleakError as e:
+        except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
             raise BluetoothError(str(e))
 
         if len(data) != 20:

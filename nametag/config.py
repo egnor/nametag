@@ -1,6 +1,6 @@
 # Configuration file representation
 
-from typing import List, Union
+from typing import List
 
 import attr
 
@@ -12,8 +12,9 @@ class HotspotConfig:
     adapter: str
     poll_delay: float
     rescan_time: float
+    min_rssi: int
 
-    io_timeout: float
+    step_timeout: float
     connect_timeout: float
     fail_timeout: float
 
@@ -21,4 +22,4 @@ class HotspotConfig:
 @attr.define
 class HotspotRule:
     require: List[str] = attr.Factory(list)
-    add: List[str] = attr.Factory(list)
+    set_flag: List[str] = attr.Factory(list)

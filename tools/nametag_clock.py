@@ -17,10 +17,6 @@ import nametag.bluetooth
 import nametag.logging
 import nametag.protocol
 
-logging.getLogger().setLevel(logging.DEBUG)
-logging.getLogger("asyncio").setLevel(logging.INFO)
-logging.getLogger("bleak").setLevel(logging.INFO)
-
 
 class ClockUpdater:
     def __init__(self):
