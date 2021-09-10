@@ -35,9 +35,10 @@ send_group = parser.add_argument_group("Commands to send")
 send_group.add_argument("--packets", nargs="+", help="Raw packets hex file")
 send_group.add_argument("--frames", nargs="+", help="Animation image files")
 send_group.add_argument("--frame_msec", type=int, default=200, help="Per frame")
-send_group.add_argument("--glyphs", nargs="+", help="Glyph image files")
+send_group.add_argument("--glyphs", nargs="+", help="Character image files")
+send_group.add_argument("--glyph_spacing", type=int, default=0, help="Pixels")
 send_group.add_argument("--mode", type=int, help="Mode to set")
-send_group.add_argument("--scroll_msec", type=int, help="Frame msec")
+send_group.add_argument("--scroll_speed", type=int, help="Scrolling (0-255)")
 send_group.add_argument("--brightness", type=int, help="Brightness (0-255)")
 send_group.add_argument("--stash", help="Hex bytes to stash on device")
 send_group.add_argument("--repeat", type=int, default=1, help="Times to loop")
@@ -51,9 +52,9 @@ if args.mode is not None:
     print(f"Set mode: {args.mode}")
     steps.extend(nametag.protocol.set_mode(args.mode))
 
-if args.scroll_msec is not None:
-    print(f"Set scroll speed: {args.scroll_msec} msec")
-    steps.extend(nametag.protocol.set_speed(args.scroll_msec))
+if args.scroll_speed is not None:
+    print(f"Set scroll speed: {args.scroll_speed}")
+    steps.extend(nametag.protocol.set_speed(args.scroll_speed))
 
 if args.brightness is not None:
     print(f"Set brightness: {args.brightness} (of 255)")
@@ -88,8 +89,14 @@ if args.glyphs:
     for glyph_path in args.glyphs:
         print(f"Glyph image: {glyph_path}")
         glyph = PIL.Image.open(glyph_path).convert(mode="1")
-        new_width = glyph.size[0] * 12 // glyph.size[1]
-        glyphs.append(glyph.resize((new_width, 12)))
+        size = (glyph.size[0] * 12 // glyph.size[1], 12)
+        glyph = glyph.resize(size) if size != glyph.size else glyph
+        if args.glyph_spacing:
+            padded_size = (size[0] + args.glyph_spacing, size[1])
+            padded_glyph = PIL.Image.new(mode="1", size=padded_size, color=0)
+            padded_glyph.paste(glyph, (0, 0))
+            glyph = padded_glyph
+        glyphs.append(glyph)
 
     steps.extend(nametag.protocol.show_glyphs(glyphs))
     print()
