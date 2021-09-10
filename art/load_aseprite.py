@@ -1,10 +1,10 @@
 import sys
 from pathlib import Path
 
-import PIL
+import PIL  # type: ignore
 
 sys.path.append(str(Path(__file__).parent.parent / "py_aseprite"))
-import aseprite
+import aseprite  # type: ignore
 
 
 def parse_ase(path):
