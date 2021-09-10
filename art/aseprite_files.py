@@ -3,7 +3,7 @@ from pathlib import Path
 
 import PIL  # type: ignore
 
-sys.path.append(str(Path(__file__).parent.parent / "py_aseprite"))
+sys.path.append(str(Path(__file__).parent / "py_aseprite"))
 import aseprite  # type: ignore
 
 

@@ -14,7 +14,7 @@ import bleak  # type: ignore
 import bleak.exc  # type: ignore
 
 sys.path.append(str(Path(__file__).parent.parent))
-import nametag.logging
+import nametag.logging_setup
 
 logging.getLogger().setLevel(logging.DEBUG)
 logging.getLogger("asyncio").setLevel(logging.INFO)

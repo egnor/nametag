@@ -3,4 +3,4 @@
 import sys
 from pathlib import Path
 
-from . import load_aseprite
+from . import aseprite_files

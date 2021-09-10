@@ -12,7 +12,7 @@ from .chunks import (
     PathChunk,
     PaletteChunk,
     UserDataChunk,
-    SliceChunk
+    SliceChunk,
 )
 
 
@@ -24,7 +24,11 @@ class AsepriteFile(object):
     def build_layer_tree(self):
         # Assuming that layers are stored in chunk #0.
         # Warn me if they're stored in another chunk
-        self.layers = [chunk for chunk in self.frames[0].chunks if isinstance(chunk, LayerChunk)]
+        self.layers = [
+            chunk
+            for chunk in self.frames[0].chunks
+            if isinstance(chunk, LayerChunk)
+        ]
         stack = []
         self.layer_tree = []
         for layer in self.layers:
@@ -38,7 +42,6 @@ class AsepriteFile(object):
 
             if isinstance(layer, LayerGroupChunk):
                 stack.append(layer)
-
 
     @staticmethod
     def parse_data(data):
@@ -67,9 +70,13 @@ class AsepriteFile(object):
                 elif chunk.chunk_type == 0x2016:
                     frame.chunks.append(MaskChunk(data, data_offset))
                 elif chunk.chunk_type == 0x0004:
-                    frame.chunks.append(OldPaleteChunk_0x0004(data, data_offset))
+                    frame.chunks.append(
+                        OldPaleteChunk_0x0004(data, data_offset)
+                    )
                 elif chunk.chunk_type == 0x0011:
-                    frame.chunks.append(OldPaleteChunk_0x0011(data, data_offset))
+                    frame.chunks.append(
+                        OldPaleteChunk_0x0011(data, data_offset)
+                    )
                 elif chunk.chunk_type == 0x2017:
                     frame.chunks.append(PathChunk(data, data_offset))
                 elif chunk.chunk_type == 0x2018:
