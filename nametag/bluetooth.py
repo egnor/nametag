@@ -129,7 +129,7 @@ class Connection:
                         logger.debug(f"{prefix}** Retry:  {text}")
                         continue
                     else:
-                        raise BluetoothError("Bad reply: {reply.hex()}")
+                        raise BluetoothError(f"Bad reply: {reply.hex()}")
 
                 if step.delay_after:
                     logger.debug(f"{prefix}-- Delay: {step.delay_after:.1f}s")
@@ -146,7 +146,7 @@ class Connection:
             raise BluetoothError(str(e))
 
         if len(data) != 20:
-            raise BluetoothError("Bad readback length: {len(data)}b")
+            raise BluetoothError(f"Bad readback length: {len(data)}b")
         return data
 
     def _on_notify(self, handle: int, data: bytes):

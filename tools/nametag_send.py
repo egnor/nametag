@@ -6,12 +6,10 @@ import logging
 import re
 import sys
 import time
-from pathlib import Path
 from typing import List, Tuple
 
 import PIL.Image  # type: ignore
 
-sys.path.append(str(Path(__file__).parent.parent))
 import nametag.bluetooth
 import nametag.logging_setup
 import nametag.protocol

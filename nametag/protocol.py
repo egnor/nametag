@@ -25,16 +25,17 @@ def _chunks(data: bytes, *, chunk_size: int) -> Iterable[bytes]:
         yield data[s : s + chunk_size]
 
 
-def _encode(body: bytes, *, tag: int) -> bytes:
-    def escape123(data: bytes) -> bytes:
-        data = data.replace(b"\2", b"\2\6")
-        data = data.replace(b"\1", b"\2\5")
-        data = data.replace(b"\3", b"\2\7")
-        return data
+def _escape123(data: bytes) -> bytes:
+    data = data.replace(b"\2", b"\2\6")
+    data = data.replace(b"\1", b"\2\5")
+    data = data.replace(b"\3", b"\2\7")
+    return data
 
+
+def _encode(body: bytes, *, tag: int) -> bytes:
     typed = struct.pack(">B", tag) + body
     sized_typed = struct.pack(">H", len(typed)) + typed
-    return b"\1" + escape123(sized_typed) + b"\3"
+    return b"\1" + _escape123(sized_typed) + b"\3"
 
 
 def _encode_step(body: bytes, *, tag: int) -> ProtocolStep:
@@ -48,14 +49,12 @@ def _bulk_steps(body: bytes, *, tag: int) -> Iterable[ProtocolStep]:
         chunk_body += struct.pack(">B", reduce(operator.xor, chunk_body, 0))
         chunk_step = _encode_step(chunk_body, tag=tag)
 
-        confirm = _encode(struct.pack(">xHx", index), tag=tag)
-        chunk_step.confirm_regex = re.compile(re.escape(confirm))
+        rep = _encode(struct.pack(">xHx", index), tag=tag)
+        chunk_step.confirm_regex = re.compile(re.escape(rep))
 
-        assert confirm[-2:] == b"\0\3"
+        assert rep[-2:] == b"\0\3"
         chunk_step.retry_regex = re.compile(
-            re.escape(confirm[:-2])
-            + b"([^\0]|\2[\5\6\7])"
-            + re.escape(confirm[-1:])
+            re.escape(rep[:-2]) + b"([^\0]|\2[\5\6])" + re.escape(rep[-1:])
         )
         yield chunk_step
 

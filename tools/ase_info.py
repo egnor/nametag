@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 
 import argparse
-import sys
-from pathlib import Path
 from typing import Dict, List
 
-sys.path.append(str(Path(__file__).parent.parent))
 import art.aseprite_import
 import nametag.logging_setup
 

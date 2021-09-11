@@ -2,7 +2,6 @@
 
 import argparse
 import asyncio
-import sys
 from pathlib import Path
 
 import PIL  # type: ignore
@@ -10,7 +9,6 @@ import PIL.Image  # type: ignore
 import PIL.ImageDraw  # type: ignore
 import PIL.ImageFont  # type: ignore
 
-sys.path.append(str(Path(__file__).parent.parent))
 import nametag.bluetooth
 import nametag.logging_setup
 import nametag.protocol
