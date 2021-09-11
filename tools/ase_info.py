@@ -92,7 +92,7 @@ for fi, frame in enumerate(ase.frames):
                     f" ({len(d['data'])}b)"
                 )
             elif "link" in chunk.data:
-                print(f"    Link: #{d['link']}")
+                print(f"    Link: F{d['link']}")
 
         elif isinstance(chunk, aseprite.CelExtraChunk):
             extra_flags = {1: "bounds-valid"}
