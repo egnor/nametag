@@ -3,4 +3,4 @@
 import sys
 from pathlib import Path
 
-from . import aseprite_files
+from . import aseprite_import

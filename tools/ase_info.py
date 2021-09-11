@@ -6,10 +6,10 @@ from pathlib import Path
 from typing import Dict, List
 
 sys.path.append(str(Path(__file__).parent.parent))
-import art.aseprite_files
+import art.aseprite_import
 import nametag.logging_setup
 
-# must import after aseprite_files
+# must import after aseprite_import
 import aseprite  # type: ignore  # isort: skip
 
 parser = argparse.ArgumentParser()
@@ -17,13 +17,15 @@ parser.add_argument("ase_file", help="File to convert")
 args = parser.parse_args()
 
 print(f"=== Loading: {args.ase_file}")
-ase = art.aseprite_files.parse_ase(args.ase_file)
+ase = art.aseprite_import.parse_ase(args.ase_file)
 print()
+
 
 def decode_flags(flags: int, names: Dict[int, str]):
     found = [name for f, name in names.items() if flags & f]
     leftover = flags & ~sum(names.keys())
-    return ','.join(found + ([f"0x{leftover:x}"] if leftover else []))
+    return ",".join(found + ([f"0x{leftover:x}"] if leftover else []))
+
 
 header_flags = {1: "opacity-valid"}
 
@@ -41,18 +43,20 @@ print(
 for fi, frame in enumerate(ase.frames):
     print(
         f"--- Frame F{fi + 1}:"
-        f" {frame.frame_duration}msec"
-        f" {frame.num_chunks}ch {frame.size}b"
+        f" t={frame.frame_duration}msec"
+        f" chunks={frame.num_chunks} ({frame.size}b)"
     )
 
     for ci, chunk in enumerate(frame.chunks):
-        print(
-            f"  C{ci}:"
-            f" {type(chunk).__name__}"
-            f" ({chunk.chunk_size}b)"
-        )
+        print(f"  C{ci}:" f" {type(chunk).__name__}" f" ({chunk.chunk_size}b)")
 
-        if isinstance(chunk, aseprite.LayerChunk):
+        if isinstance(chunk, aseprite.PaletteChunk):
+            print(
+                f"    Colors: {chunk.palette_size}"
+                f" [{chunk.first_color_index}-{chunk.last_color_index}]"
+            )
+
+        elif isinstance(chunk, aseprite.LayerChunk):
             layer_types = {0: "Normal", 1: "Group", 2: "Tilemap"}
             typ = layer_types.get(chunk.layer_type, f"type={chunk.layer_type}")
             layer_flags = {
@@ -72,15 +76,32 @@ for fi, frame in enumerate(ase.frames):
                 f" [{decode_flags(chunk.flags, layer_flags)}]"
                 f' "{chunk.name}"'
             )
-            pass
 
-        if isinstance(chunk, aseprite.CelChunk):
+        elif isinstance(chunk, aseprite.CelChunk):
             cel_types = {0: "RawData", 1: "Linked", 2: "ZImage", 3: "ZTiles"}
             typ = cel_types.get(chunk.cel_type, f"type={chunk.cel_type}")
             print(
-                f"    Cel: {typ}"
-                f" layer=L{chunk.layer_index}"
-                f" @{chunk.x_pos},{chunk.y_pos} opacity={chunk.opacity}"
+                f"    {typ}: layer=L{chunk.layer_index}"
+                f" pos=({chunk.x_pos},{chunk.y_pos}) opacity={chunk.opacity}"
+            )
+
+            if all(k in chunk.data for k in ("width", "height", "data")):
+                d = chunk.data
+                print(
+                    f"    Data: {d['width']}x{d['height']}"
+                    f" ({len(d['data'])}b)"
+                )
+            elif "link" in chunk.data:
+                print(f"    Link: #{d['link']}")
+
+        elif isinstance(chunk, aseprite.CelExtraChunk):
+            extra_flags = {1: "bounds-valid"}
+            print(
+                f"    Precise:"
+                f" {chunk.cel_width / 65536:.1f}x{chunk.cel_height / 65536:.1f}"
+                f" pos=({chunk.precise_x_pos / 65536:.1f}"
+                f"x{chunk.precise_y_pos / 65536:.1f})"
+                f" [{decode_flags(chunk.flags, extra_flags)}]"
             )
 
         # TODO, add other chunk types as needed
