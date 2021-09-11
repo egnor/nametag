@@ -19,10 +19,12 @@ logging.getLogger("asyncio").setLevel(logging.INFO)
 logging.getLogger("bleak").setLevel(logging.INFO)
 
 parser = argparse.ArgumentParser()
-dev_group = parser.add_argument_group("Device matching")
-dev_group.add_argument("--adapter", default="hci0", help="BT interface")
+parser.add_argument("--adapter", default="hci0", help="BT interface")
+
+dev_group = parser.add_mutually_exclusive_group()
 dev_group.add_argument("--address", default="", help="MAC to address")
 dev_group.add_argument("--code", default="", help="Device code to find")
+dev_group.add_argument("--save_tagsetup", help="Save setup to file")
 
 time_group = parser.add_argument_group("Timeouts")
 time_group.add_argument("--connect_timeout", type=float, default=10.0)
@@ -30,6 +32,7 @@ time_group.add_argument("--step_timeout", type=float, default=5.0)
 time_group.add_argument("--fail_timeout", type=float, default=60.0)
 
 send_group = parser.add_argument_group("Commands to send")
+send_group.add_argument("--tagsetup", help="Load setup from file")
 send_group.add_argument("--packets", nargs="+", help="Raw packets hex file")
 send_group.add_argument("--frames", nargs="+", help="Animation image files")
 send_group.add_argument("--frame_msec", type=int, default=200, help="Per frame")
@@ -45,6 +48,11 @@ args = parser.parse_args()
 steps: List[nametag.protocol.ProtocolStep] = []
 
 print("=== Processing send command(s) ===")
+
+if args.tagsetup:
+    print(f"Loading setup: {args.tagsetup}")
+    with open(args.tagsetup, "r") as load_file:
+        steps.extend(nametag.protocol.from_str(load_file.read()))
 
 if args.mode is not None:
     print(f"Set mode: {args.mode}")
@@ -106,10 +114,17 @@ if args.stash is not None:
 
 if not steps:
     print("No command requests (see --help for options)")
-    sys.exit(0)
+    sys.exit(1)
 
 print(f"{len(steps)} packets to send")
 print()
+
+if args.save_tagsetup:
+    print(f"Saving setup: {args.save_tagsetup}")
+    with open(args.save_tagsetup, "w") as save_file:
+        save_file.write(nametag.protocol.to_str(steps))
+    print()
+    sys.exit(0)
 
 
 async def run():

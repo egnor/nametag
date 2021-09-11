@@ -1,15 +1,17 @@
 # Protocol encoding for the nametag (see bluetooth.py for hardware access)
 
 import datetime
+import json
 import operator
 import re
 import struct
 from functools import reduce
-from typing import Iterable, List, Optional, Pattern
+from typing import Any, Iterable, List, Optional, Pattern
 
 import attr
+import cattr.preconf.json
 import crcmod  # type: ignore
-import PIL  # type: ignore
+import PIL.Image  # type: ignore
 
 
 @attr.define
@@ -129,3 +131,28 @@ def unstash_readback(data: bytes) -> Optional[bytes]:
             return stash_data
 
     return None  # Invalid stash
+
+
+def _make_converter():
+    conv = cattr.preconf.json.make_converter(omit_if_default=True)
+
+    def _structure_pattern(s: str, cl: Any) -> Pattern[bytes]:
+        return re.compile(conv.structure(s, bytes))
+
+    def _unstructure_pattern(p: Pattern[bytes]) -> str:
+        return conv.unstructure(p.pattern)
+
+    conv.register_structure_hook(Pattern[bytes], _structure_pattern)
+    conv.register_unstructure_hook(re.Pattern, _unstructure_pattern)
+    return conv
+
+
+_converter = _make_converter()
+
+
+def to_str(steps: Iterable[ProtocolStep]) -> str:
+    return json.dumps(_converter.unstructure(steps))
+
+
+def from_str(to_load: str) -> Iterable[ProtocolStep]:
+    return _converter.structure(json.loads(to_load), List[ProtocolStep])
