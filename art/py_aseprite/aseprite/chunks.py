@@ -148,7 +148,7 @@ class CelChunk(Chunk):
 
 
 class CelExtraChunk(Chunk):
-    celextra_format = "<HLLLL16x"
+    celextra_format = "<LLLLL16x"
 
     def __init__(self, data, data_offset=0):
         Chunk.__init__(self, data, data_offset)
