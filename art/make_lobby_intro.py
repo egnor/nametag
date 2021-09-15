@@ -64,4 +64,3 @@ for team in range(1, TEAMS):
 
 print("=== emoji test ===")
 all_emoji = set(sum(EMOJIS, []))
-

@@ -14,7 +14,7 @@ def run(*args):
     check_call(args)
 
 
-excludes = ["art/py_aseprite/"]
+excludes = ["art/py_aseprite/", "art/twemoji/"]
 exclude_re = f"^({'|'.join(re.escape(e) for e in excludes)})"
 run("black", "-l", "80", "--exclude", exclude_re, ".")
 
