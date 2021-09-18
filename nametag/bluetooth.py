@@ -54,8 +54,8 @@ class Scanner:
         try:
             logger.debug("Stopping scanner...")
             await self._exits.aclose()
-        except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
-            raise BluetoothError("Scan stop", exc=e)
+        except (bleak.exc.BleakError, asyncio.TimeoutError):
+            logger.warning("Error stopping scanner")
 
     def visible_tags(self) -> List[ScanTag]:
         assert self._scanner
@@ -113,8 +113,8 @@ class Connection:
         try:
             logger.debug(f"[{self.tag.code}] Disconnecting...")
             await self._exits.aclose()
-        except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
-            raise BluetoothError("Disconnecting", exc=e)
+        except (bleak.exc.BleakError, asyncio.TimeoutError):
+            logger.warning("Error disconnecting")
 
     async def do_steps(self, steps: Iterable[ProtocolStep]):
         assert self._client
