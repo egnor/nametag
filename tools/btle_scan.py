@@ -42,8 +42,11 @@ def hex_dump(data: bytes, *, prefix: str = ""):
 def print_devices(devices: List[Any], args: argparse.Namespace):
     matching = [dev for dev in devices if args.name in dev.name]
     print(f'Of {len(devices)} devices, {len(matching)} match "{args.name}":')
-    for dev in matching:
-        print(f'=== "{dev.name}" ({dev.address.lower()}) rssi={dev.rssi} ===')
+    for i, dev in enumerate(matching):
+        print(
+            f"=== {i + 1}/{len(matching)}: "
+            f'"{dev.name}" ({dev.address.lower()}) rssi={dev.rssi} ==='
+        )
         uuids = dev.metadata.get("uuids", [])
         mdata = dev.metadata.get("manufacturer_data", {})
         if uuids:

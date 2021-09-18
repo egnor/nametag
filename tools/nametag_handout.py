@@ -54,7 +54,7 @@ async def run(args):
                         else:
                             path, steps = handouts[len(code_task)]
                             coro = send_handout(tag, path, steps)
-                            task = asyncio.create_task(coro, name=tag.code)
+                            task = asyncio.create_task(coro)
                             code_task[tag.code] = task
 
                 await asyncio.sleep(0.5)
