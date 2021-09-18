@@ -20,7 +20,9 @@ logger = logging.getLogger(__name__)
 
 
 class BluetoothError(Exception):
-    pass
+    def __init__(self, message, exc=None):
+        message += ": " + (str(exc) or type(exc).__qualname__) if exc else ""
+        Exception.__init__(self, message)
 
 
 @attr.define
@@ -45,7 +47,7 @@ class Scanner:
             self._scanner = await self._exits.enter_async_context(make_scanner)
             await self._scanner.start()
         except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
-            raise BluetoothError(str(e))
+            raise BluetoothError("Scan start", exc=e)
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
@@ -53,7 +55,7 @@ class Scanner:
             logger.debug("Stopping scanner...")
             await self._exits.aclose()
         except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
-            raise BluetoothError(str(e))
+            raise BluetoothError("Scan stop", exc=e)
 
     def visible_tags(self) -> List[ScanTag]:
         assert self._scanner
@@ -73,8 +75,9 @@ class Scanner:
 
 
 class Connection:
-    def __init__(self, tag: ScanTag):
+    def __init__(self, tag: ScanTag, *, timeout=None):
         self.tag = tag
+        self._timeout = timeout
         self._exits = contextlib.AsyncExitStack()
         self._client: Optional[bleak.BleakClient] = None
         self._received: asyncio.Queue[bytes] = asyncio.Queue()
@@ -84,18 +87,26 @@ class Connection:
             assert self._client is None
             t = self.tag
             logger.debug(f"[{t.code}] Connecting ({t.address})...")
-            make_client = bleak.BleakClient(t._device)
+            make_client = bleak.BleakClient(t._device, timeout=self._timeout)
             self._client = await self._exits.enter_async_context(make_client)
+        except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
+            raise BluetoothError("Connecting", exc=e)
 
+        try:
             char_uuid = "0000fff1-0000-1000-8000-00805f9b34fb"
             self._char = self._client.services.get_characteristic(char_uuid)
-            if self._char:
-                await self._client.start_notify(self._char, self._on_notify)
-                logger.debug(f"[{t.code}] Connected and subscribed")
-            else:
-                raise BluetoothError(f"[{t.code}] No 0xfff1 characteristic!")
         except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
-            raise BluetoothError(str(e))
+            raise BluetoothError("Inspecting", exc=e)
+
+        if not self._char:
+            raise BluetoothError("No 0xfff1 characteristic!")
+
+        try:
+            await self._client.start_notify(self._char, self._on_notify)
+            logger.debug(f"[{t.code}] Connected and subscribed")
+        except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
+            raise BluetoothError("Start notify", exc=e)
+
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
@@ -103,7 +114,7 @@ class Connection:
             logger.debug(f"[{self.tag.code}] Disconnecting...")
             await self._exits.aclose()
         except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
-            raise BluetoothError(str(e))
+            raise BluetoothError("Disconnecting", exc=e)
 
     async def do_steps(self, steps: Iterable[ProtocolStep]):
         assert self._client
@@ -123,7 +134,7 @@ class Connection:
                         logger.debug(f"{prefix}Sending: {packet.hex()}")
                         await self._client.write_gatt_char(self._char, packet)
                     except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
-                        raise BluetoothError(str(e))
+                        raise BluetoothError("Sending data", exc=e)
 
                 if step.confirm_regex:
                     confirm_text = f"/{str(step.confirm_regex.pattern)[2:-1]}/"
@@ -146,7 +157,7 @@ class Connection:
             data = await self._client.read_gatt_char(self._char)
             logger.debug(f"[{self.tag.code}]\n      -> Read:   {data.hex()}")
         except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
-            raise BluetoothError(str(e))
+            raise BluetoothError("Reading data", exc=e)
 
         if len(data) != 20:
             raise BluetoothError(f"Bad readback length: {len(data)}b")
@@ -197,10 +208,10 @@ class RetryConnection:
                 do_readback = self._connection.readback()
                 return await asyncio.wait_for(do_readback, self.step_timeout)
             except BluetoothError as e:
-                await self._on_error("Read error", e)
+                await self._on_error("Read error", exc=e)
             except asyncio.TimeoutError as e:
                 message = f"Readback timeout ({self.step_timeout:.1f}s)"
-                await self._on_error(message, e)
+                await self._on_error(message, exc=e)
 
     async def do_steps(self, steps: Iterable[ProtocolStep]):
         self._fail_timer_start = time.monotonic()
@@ -215,10 +226,10 @@ class RetryConnection:
                     self._fail_timer_start = time.monotonic()  # Made progress
                 return
             except BluetoothError as e:
-                await self._on_error("Bluetooth error", e)
+                await self._on_error("Bluetooth error", exc=e)
             except asyncio.TimeoutError as e:
                 message = f"Write timeout ({self.step_timeout:.1f}s)"
-                await self._on_error(message, e)
+                await self._on_error(message, exc=e)
 
     async def _connect_if_needed(self):
         if self._connection:
@@ -226,24 +237,24 @@ class RetryConnection:
 
         while True:
             try:
-                make_conn = Connection(self.tag)
+                make_conn = Connection(self.tag, timeout=self.connect_timeout)
                 enter_conn = self._exits.enter_async_context(make_conn)
                 conn = await asyncio.wait_for(enter_conn, self.connect_timeout)
                 self._connection = conn
                 self._fail_timer_start = time.monotonic()  # Made progress
                 return
             except BluetoothError as e:
-                await self._on_error("Connection error", e)
+                await self._on_error("Connection error", exc=e)
             except asyncio.TimeoutError as e:
                 message = f"Connection timeout ({self.connect_timeout:.1f}s)"
-                await self._on_error(message, e)
+                await self._on_error(message, exc=e)
 
-    async def _on_error(self, message: str, exc: Exception):
+    async def _on_error(self, message: str, *, exc: Exception):
         self._connection = None
         await self._exits.aclose()
 
         message = f"[{self.tag.code}] {message}"
-        exception = (str(exc) or type(exc).__name__) if exc else ''
+        exception = (str(exc) or type(exc).__qualname__) if exc else ""
         detail = f"\n{exception}".replace("\n", "\n      ").rstrip()
         elapsed = time.monotonic() - self._fail_timer_start
         if not self.fail_timeout:
