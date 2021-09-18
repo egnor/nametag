@@ -16,7 +16,9 @@ async def send_handout(
     steps: List[nametag.protocol.ProtocolStep],
 ):
     logging.info(f"[{tag.code}] Connecting ({path})")
-    async with nametag.bluetooth.RetryConnection(tag) as conn:
+    async with nametag.bluetooth.RetryConnection(
+        tag, connect_timeout=60, step_timeout=20, fail_timeout=None
+    ) as conn:
         logging.info(f"[{tag.code}] Sending ({path})")
         await conn.do_steps(steps)
         logging.info(f"[{tag.code}] Sent ({path})")
