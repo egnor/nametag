@@ -40,19 +40,23 @@ async def run(args):
         async with nametag.bluetooth.Scanner(adapter=args.adapter) as scanner:
             while True:
                 visible = scanner.visible_tags()
+                running_count = sum(not t.done() for t in code_task.values())
                 logging.info(
                     "Scanning... "
                     f"handouts={len(handouts)} "
                     f"started={len(code_task)} "
-                    f"finished={sum(t.done() for t in code_task.values())} "
+                    f"running={running_count} "
                     f"visible={len(visible)}"
                 )
                 for tag in visible:
+                    if running_count >= args.parallel:
+                        break
                     if tag.code not in code_task:
-                        path, steps = handouts[len(code_task) % len(handouts)]
-                        coro = send_handout(tag, path, steps)
+                        path, st = handouts[len(code_task) % len(handouts)]
+                        coro = send_handout(tag, path, st)
                         task = asyncio.create_task(coro)
                         code_task[tag.code] = task
+                        running_count += 1
 
                 await asyncio.sleep(0.5)
 
@@ -69,6 +73,7 @@ async def run(args):
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--adapter", default="hci0", help="BT interface")
+parser.add_argument("--parallel", type=int, default=5, help="Parallel connects")
 parser.add_argument("tagsetup", nargs="+", help="tagsetup files to hand out")
 
 args = parser.parse_args()
