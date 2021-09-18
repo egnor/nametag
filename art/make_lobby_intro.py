@@ -13,16 +13,16 @@ import nametag.protocol
 TEAMS = 50
 
 EMOJIS = [
-    ["star-struck", "birthday", "heart"],
-    ["slightly-smiling", "bulb"],
-    ["cartwheel", "fire"],
-    ["heart", "seedling"],
-    ["bulb", "notes"],
-    ["tada", "cartwheel"],
-    ["bell", "bulb"],
-    ["notes", "ribbon"],
-    ["sun", "confetti-ball"],
-    ["bulb", "balloon", "star-struck"],
+    ["star", "fire", "sun"],
+    ["rainbow", "crown", "confetti_ball"],
+    ["mushroom", "nerd_face", "fire"],
+    ["victory_hand", "confetti_ball", "rainbow"],
+    ["tornado", "pray", "fire"],
+    ["crescent_moon", "slightly_smiling_face", "bulb"],
+    ["sparkles", "ribbon", "confetti_ball"],
+    ["seedling", "heart", "sparkles"],
+    ["nerd_face", "birthday", "rainbow"],
+    ["sparkles", "crescent_moon", "thumbs_up"],
 ]
 
 art_dir = Path(__file__).parent
