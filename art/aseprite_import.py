@@ -34,8 +34,13 @@ def image_from_ase(path, layer_index=None):
             for c in palette_chunk.colors
             for n in ("red", "green", "blue", "alpha")
         ]
-
         image.putpalette(palette_data, rawmode="RGBA")
+
+        darkest_index = min(
+            range(len(palette_data) // 4),
+            key=lambda i: sum(palette_data[4 * i : 4 * i + 4]),
+        )
+        image.paste(darkest_index, box=(0, 0) + image.size)
 
     if layer_index is None:
         layer_index = max(
