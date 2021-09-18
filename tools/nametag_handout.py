@@ -15,11 +15,12 @@ async def send_handout(
     path: str,
     steps: List[nametag.protocol.ProtocolStep],
 ):
-    logging.info(f"[{tag.code}] Connecting to send {path}")
+    logging.info(f"[{tag.code}] Connecting ({path})")
     async with nametag.bluetooth.RetryConnection(tag) as conn:
-        logging.info(f"[{tag.code}] Sending {path}")
+        logging.info(f"[{tag.code}] Sending ({path})")
         await conn.do_steps(steps)
-        logging.info(f"[{tag.code}] Sent {path}")
+        logging.info(f"[{tag.code}] Sent ({path})")
+    logging.info(f"[{tag.code}] Done ({path})")
 
 
 async def run(args):
@@ -34,13 +35,15 @@ async def run(args):
     async with nametag.bluetooth.Scanner(adapter=args.adapter) as scanner:
         code_task: Dict[str, asyncio.Task] = {}
         while True:
+            visible = scanner.visible_tags()
             logging.info(
                 "Scanning... "
                 f"handouts={len(handouts)} "
                 f"started={len(code_task)} "
                 f"finished={sum(t.done() for t in code_task.values())} "
+                f"visible={len(visible)}"
             )
-            for tag in scanner.visible_tags():
+            for tag in visible:
                 if tag.code not in code_task:
                     if len(code_task) >= len(handouts):
                         logging.warn(f"{tag.code}: OUT OF HANDOUTS")
