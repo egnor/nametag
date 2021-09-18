@@ -243,7 +243,8 @@ class RetryConnection:
         await self._exits.aclose()
 
         message = f"[{self.tag.code}] {message}"
-        detail = f"\n{exc or ''}".replace("\n", "\n      ").rstrip()
+        exception = (str(exc) or type(exc).__name__) if exc else ''
+        detail = f"\n{exception}".replace("\n", "\n      ").rstrip()
         elapsed = time.monotonic() - self._fail_timer_start
         if not self.fail_timeout:
             logging.warning(f"{message}, retrying...{detail}")
