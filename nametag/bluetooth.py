@@ -89,8 +89,11 @@ class Connection:
 
             char_uuid = "0000fff1-0000-1000-8000-00805f9b34fb"
             self._char = self._client.services.get_characteristic(char_uuid)
-            await self._client.start_notify(self._char, self._on_notify)
-            logger.debug(f"[{t.code}] Connected and subscribed")
+            if self._char:
+                await self._client.start_notify(self._char, self._on_notify)
+                logger.debug(f"[{t.code}] Connected and subscribed")
+            else:
+                raise BluetoothError(f"[{t.code}] No 0xfff1 characteristic!")
         except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
             raise BluetoothError(str(e))
         return self
