@@ -15,6 +15,7 @@ isort = "*"
 mypy = "*"
 types-attrs = "*"
 emoji = "*"
+typed-ast = "*"
 
 [packages.bleak]
 git = "https://github.com/hbldh/bleak"
