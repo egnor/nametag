@@ -3,7 +3,7 @@
 import argparse
 import asyncio
 import logging
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Tuple
 
 import nametag.bluetooth
 import nametag.logging_setup
@@ -32,7 +32,6 @@ async def run(args):
             handouts.append((path, steps))
 
     code_task: Dict[str, asyncio.Task] = {}
-    code_out: Set[str] = set()
 
     try:
         logging.info("Starting scanner")
@@ -47,15 +46,11 @@ async def run(args):
                     f"visible={len(visible)}"
                 )
                 for tag in visible:
-                    if tag.code not in code_task and tag.code not in code_out:
-                        if len(code_task) >= len(handouts):
-                            logging.warning(f"{tag.code}: OUT OF HANDOUTS")
-                            code_out.add(tag.code)
-                        else:
-                            path, steps = handouts[len(code_task)]
-                            coro = send_handout(tag, path, steps)
-                            task = asyncio.create_task(coro)
-                            code_task[tag.code] = task
+                    if tag.code not in code_task:
+                        path, steps = handouts[len(code_task) % len(handouts)]
+                        coro = send_handout(tag, path, steps)
+                        task = asyncio.create_task(coro)
+                        code_task[tag.code] = task
 
                 await asyncio.sleep(0.5)
 
@@ -63,7 +58,7 @@ async def run(args):
         for code, task in code_task.items():
             if not task.done():
                 logging.warning(f"{code}: Cancelling task...")
-                task.cancel("Cancelled by program shutdown")
+                task.cancel()
             try:
                 await task
             except BaseException as exc:  # includes ^C
