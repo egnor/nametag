@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "fd7a4a6c006de138e111eb6efaa942506ab3707de45f6559f0e0915463769bf4"
+            "sha256": "72ee10ee7f0fc8f06eb35b4bcb4cd1107da339f8291401fbb676afea71d07491"
         },
         "pipfile-spec": 6,
         "requires": {},
@@ -23,12 +23,9 @@
             "version": "==21.2.0"
         },
         "bleak": {
-            "hashes": [
-                "sha256:09733060e7561bf852359eadf959cd496c64a87e8875d26b6545fd2e8e07cd2c",
-                "sha256:4a80a24cc944e52e856054639f298229c39a2fc720e5f7adbeebb117d10849ed"
-            ],
-            "index": "pypi",
-            "version": "==0.12.1"
+            "editable": true,
+            "git": "https://github.com/hbldh/bleak",
+            "ref": "a83283411729f7fa42a68f827efe3cf2285ae03a"
         },
         "cattrs": {
             "hashes": [
@@ -53,7 +50,6 @@
                 "sha256:58948f9aff9db08316734c0be2a120f6dc502124d9642f55e90ac82ffb16a18b",
                 "sha256:f4eae26909332ada528c0a3549dda8d4f088f9b365153952a408e28023a626a5"
             ],
-            "markers": "platform_system == 'Linux'",
             "version": "==0.2.3"
         },
         "pillow": {
@@ -141,10 +137,10 @@
         },
         "emoji": {
             "hashes": [
-                "sha256:21257f311e24468031e85685867c00b87249dc7612b82dc763a771ba5fb00c01"
+                "sha256:2eddd062f940924fb25a3108d84d77dc571927d91a419b4c30f37e253c791b19"
             ],
             "index": "pypi",
-            "version": "==1.4.2"
+            "version": "==1.5.0"
         },
         "isort": {
             "hashes": [

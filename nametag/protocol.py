@@ -19,7 +19,7 @@ class ProtocolStep:
     packets: List[bytes]
     confirm_regex: Optional[Pattern[bytes]] = None
     retry_regex: Optional[Pattern[bytes]] = None
-    delay_after: float = 0.0
+    delay_before: float = 0.0
 
 
 def _chunks(data: bytes, *, chunk_size: int) -> Iterable[bytes]:
@@ -44,7 +44,9 @@ def _encode_step(body: bytes, *, tag: int) -> ProtocolStep:
     return ProtocolStep(list(_chunks(_encode(body, tag=tag), chunk_size=20)))
 
 
-def _bulk_steps(body: bytes, *, tag: int) -> Iterable[ProtocolStep]:
+def _bulk_steps(
+    body: bytes, *, tag: int, delay_before: float
+) -> Iterable[ProtocolStep]:
     byte_re = b"(\2[\5\6\7]|[^\2])"  # one byte encoded with escape123()
     for index, chunk in enumerate(_chunks(body, chunk_size=128)):
         chunk_body = struct.pack(">xHHB", len(body), index, len(chunk)) + chunk
@@ -55,9 +57,9 @@ def _bulk_steps(body: bytes, *, tag: int) -> Iterable[ProtocolStep]:
         chunk_step.confirm_regex = re.compile(re.escape(rep))
 
         assert rep[-2:] == b"\0\3"
-        chunk_step.retry_regex = re.compile(
-            re.escape(rep[:-2]) + b"([^\0]|\2[\5\6])" + re.escape(rep[-1:])
-        )
+        rx = re.escape(rep[:-2]) + b"([^\0]|\2[\5\6\7])" + re.escape(rep[-1:])
+        chunk_step.retry_regex = re.compile(rx)
+        chunk_step.delay_before, delay_before = delay_before, 0.0
         yield chunk_step
 
 
@@ -79,7 +81,7 @@ def show_glyphs(glyphs: Iterable[PIL.Image.Image]) -> Iterable[ProtocolStep]:
         bytes(len(b) for b in as_bytes),
         sum(len(b) for b in as_bytes),
     )
-    return _bulk_steps(header + b"".join(as_bytes), tag=2)
+    return _bulk_steps(header + b"".join(as_bytes), tag=2, delay_before=0.5)
 
 
 def show_frames(
@@ -95,22 +97,19 @@ def show_frames(
         raise ValueError("No frames to show")
 
     header = struct.pack(">24xBH", len(as_bytes), msec)
-    return _bulk_steps(header + b"".join(as_bytes), tag=4)
+    return _bulk_steps(header + b"".join(as_bytes), tag=4, delay_before=0.5)
 
 
 def set_mode(mode) -> Iterable[ProtocolStep]:
-    step = _encode_step(struct.pack(">B", mode), tag=6)
-    return [attr.evolve(step, delay_after=0.5)]
+    return [_encode_step(struct.pack(">B", mode), tag=6)]
 
 
 def set_speed(speed) -> Iterable[ProtocolStep]:
-    step = _encode_step(struct.pack(">B", speed), tag=7)
-    return [attr.evolve(step, delay_after=0.5)]
+    return [_encode_step(struct.pack(">B", speed), tag=7)]
 
 
 def set_brightness(brightness) -> Iterable[ProtocolStep]:
-    step = _encode_step(struct.pack(">B", brightness), tag=8)
-    return [attr.evolve(step, delay_after=0.5)]
+    return [_encode_step(struct.pack(">B", brightness), tag=8)]
 
 
 _stash_crc = crcmod.mkCrcFun(0x1CF)  # Koopman's 0xe7

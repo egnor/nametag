@@ -110,6 +110,10 @@ class Connection:
         prefix = f"[{self.tag.code}]\n      "
 
         for step in steps:
+            if step.delay_before:
+                logger.debug(f"{prefix}-- Delay: {step.delay_before:.1f}s")
+                await asyncio.sleep(step.delay_before)
+
             while True:
                 while self._received.qsize():
                     self._received.get_nowait()
@@ -133,10 +137,6 @@ class Connection:
                         continue
                     else:
                         raise BluetoothError(f"Bad reply: {reply.hex()}")
-
-                if step.delay_after:
-                    logger.debug(f"{prefix}-- Delay: {step.delay_after:.1f}s")
-                    await asyncio.sleep(step.delay_after)
 
                 break
 
@@ -168,11 +168,13 @@ class RetryConnection:
         connect_timeout=None,
         step_timeout=None,
         fail_timeout=None,
+        retry_delay=0.5,
     ):
         self.tag = tag
         self.connect_timeout = connect_timeout
         self.step_timeout = step_timeout
         self.fail_timeout = fail_timeout
+        self.retry_delay = retry_delay
         self._exits = contextlib.AsyncExitStack()
         self._connection: Optional[Connection] = None
         self._fail_timer_start = 0.0
@@ -244,10 +246,12 @@ class RetryConnection:
         detail = f"\n{exc or ''}".replace("\n", "\n      ").rstrip()
         elapsed = time.monotonic() - self._fail_timer_start
         if not self.fail_timeout:
-            logging.warn(f"{message}, retrying...{detail}")
+            logging.warning(f"{message}, retrying...{detail}")
+            await asyncio.sleep(self.retry_delay)
         elif elapsed < self.fail_timeout:
             time_text = f"{elapsed:.1f} < {self.fail_timeout:.1f}s"
-            logging.warn(f"{message}, retrying ({time_text})...{detail}")
+            logging.warning(f"{message}, retrying ({time_text})...{detail}")
+            await asyncio.sleep(self.retry_delay)
         else:
             message = f"{message} ({elapsed:.1f} > {self.fail_timeout:.1f}s)"
             raise BluetoothError(message) from exc

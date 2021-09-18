@@ -5,7 +5,6 @@ name = "pypi"
 
 [packages]
 Pillow = "*"
-bleak = "*"
 crcmod = "*"
 attrs = "*"
 cattrs = "*"
@@ -16,3 +15,7 @@ isort = "*"
 mypy = "*"
 types-attrs = "*"
 emoji = "*"
+
+[packages.bleak]
+git = "https://github.com/hbldh/bleak"
+editable = true
