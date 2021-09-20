@@ -87,6 +87,9 @@ class AsepriteFile(object):
                     frame.chunks.append(UserDataChunk(data, data_offset))
                 elif chunk.chunk_type == 0x2022:
                     frame.chunks.append(SliceChunk(data, data_offset))
+                elif chunk.chunk_type == 0x2007:
+                    # by egnor to silence this
+                    pass  # TODO: Parse the Color Profile Chunk
                 else:
                     print("Skipped 0x{:04x}".format(chunk.chunk_type))
 
