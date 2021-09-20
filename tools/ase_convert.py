@@ -2,17 +2,19 @@
 
 import argparse
 
-import art.aseprite_import
+import PIL.Image  # type: ignore
+
+import nametag.aseprite_loader
 import nametag.logging_setup
 
 parser = argparse.ArgumentParser()
-parser.add_argument("ase_file", help="File to convert")
-parser.add_argument("out_file", nargs="?", help="File to convert")
+parser.add_argument("input_file", help="File to convert")
+parser.add_argument("output_file", nargs="?", help="File to convert")
 args = parser.parse_args()
 
-print(f"Reading: {args.ase_file}")
-image = art.aseprite_import.image_from_ase(args.ase_file)
+print(f"Reading: {args.input_file}")
+image = PIL.Image.open(args.input_file)
 
-out_file = args.out_file or args.ase_file.replace(".ase", "") + ".png"
+out_file = args.output_file or args.input_file.replace(".ase", "") + ".png"
 print(f"Writing: {out_file}")
 image.save(out_file)

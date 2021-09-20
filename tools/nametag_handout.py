@@ -49,7 +49,7 @@ async def run(args):
                     f"visible={len(visible)}"
                 )
                 for tag in visible:
-                    if running_count >= args.parallel:
+                    if running_count >= args.connections:
                         break
                     if tag.code not in code_task:
                         path, st = handouts[len(code_task) % len(handouts)]
@@ -73,7 +73,7 @@ async def run(args):
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--adapter", default="hci0", help="BT interface")
-parser.add_argument("--parallel", type=int, default=5, help="Parallel connects")
+parser.add_argument("--connections", type=int, default=5, help="")
 parser.add_argument("tagsetup", nargs="+", help="tagsetup files to hand out")
 
 args = parser.parse_args()

@@ -3,7 +3,7 @@
 import argparse
 from typing import Dict, List
 
-import art.aseprite_import
+import nametag.aseprite_loader
 import nametag.logging_setup
 
 # must import after aseprite_import
@@ -14,7 +14,8 @@ parser.add_argument("ase_file", help="File to convert")
 args = parser.parse_args()
 
 print(f"=== Loading: {args.ase_file}")
-ase = art.aseprite_import.parse_ase(args.ase_file)
+with open(args.ase_file, "rb") as ase_file:
+    ase = aseprite.AsepriteFile(ase_file.read())
 print()
 
 

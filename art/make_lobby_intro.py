@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 import PIL.Image  # type: ignore
 
-import art.aseprite_import
+import nametag.aseprite_loader
 import nametag.protocol
 
 TEAMS = 50
@@ -26,12 +26,12 @@ EMOJIS = [
 ]
 
 
-def make_glyph(ase_path, spacing):
-    print(f"Glyph: {ase_path} (pad={spacing})")
-    ase_image = art.aseprite_import.image_from_ase(ase_path)
-    padded_image = PIL.Image.new("1", (ase_image.size[0] + spacing, 12))
-    padded_image.paste(ase_image, box=(0, 0) + ase_image.size)
-    return padded_image
+def pad_glyph(image_path, spacing):
+    print(f"Glyph: {image_path} (pad={spacing})")
+    with PIL.Image.open(image_path) as loaded_image:
+        padded_image = PIL.Image.new("1", (loaded_image.size[0] + spacing, 12))
+        padded_image.paste(loaded_image, box=(0, 0) + loaded_image.size)
+        return padded_image
 
 
 common_steps: List[nametag.protocol.ProtocolStep] = []
@@ -49,15 +49,15 @@ for team in range(1, TEAMS):
 
     glyphs = (
         [
-            make_glyph(art_dir / "sources" / "emoji" / f"{emoji}.ase", 10)
+            pad_glyph(art_dir / "sources" / "emoji" / f"{emoji}.ase", 10)
             for emoji in EMOJIS[team % 10]
         ]
         + [
-            make_glyph(art_dir / "sources" / "lobby" / "lobby-logo.ase", 5),
-            make_glyph(art_dir / "sources" / "lobby" / "lobby-team.ase", 5),
+            pad_glyph(art_dir / "sources" / "lobby" / "lobby-logo.ase", 5),
+            pad_glyph(art_dir / "sources" / "lobby" / "lobby-team.ase", 5),
         ]
         + [
-            make_glyph(art_dir / "sources" / "lobby" / f"lobby-{n}.ase", 2)
+            pad_glyph(art_dir / "sources" / "lobby" / f"lobby-{n}.ase", 2)
             for n in str(team)
         ]
     )
@@ -71,7 +71,7 @@ for team in range(1, TEAMS):
 
 print("=== emoji test ===")
 glyphs = [
-    make_glyph(art_dir / "sources" / "emoji" / f"{emoji}.ase", 10)
+    pad_glyph(art_dir / "sources" / "emoji" / f"{emoji}.ase", 10)
     for emoji in list(sorted(set(e for emojis in EMOJIS for e in emojis)))
 ]
 

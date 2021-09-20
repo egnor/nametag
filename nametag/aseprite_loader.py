@@ -1,20 +1,15 @@
 import sys
 from pathlib import Path
+from typing import IO, Optional
 
 import PIL.Image  # type: ignore
 
-sys.path.append(str(Path(__file__).parent / "py_aseprite"))
+sys.path.append(str(Path(__file__).parent.parent / "external" / "py_aseprite"))
 import aseprite  # type: ignore
 
 
-def parse_ase(path):
-    with open(path, "rb") as file:
-        return aseprite.AsepriteFile(file.read())
-
-
-def image_from_ase(path, layer_index=None):
-    ase = parse_ase(path)
-
+def image_from_ase(data: bytes, layer_index: Optional[int] = None):
+    ase = aseprite.AsepriteFile(data)
     image = PIL.Image.new(
         mode={8: "P", 16: "L", 32: "RGBA"}[ase.header.color_depth],
         size=(ase.header.width, ase.header.height),
@@ -68,3 +63,16 @@ def image_from_ase(path, layer_index=None):
 
     image.paste(cel_image, box=(cel.x_pos, cel.y_pos))
     return image
+
+
+def open_factory(fp: Optional[IO], filename: Optional[str]):
+    if fp:
+        return image_from_ase(fp.read())
+    else:
+        assert filename is not None
+        with open(filename, "rb") as fp:
+            return image_from_ase(fp.read())
+
+
+PIL.Image.register_open("ASE", open_factory)
+PIL.Image.register_extension("ASE", ".ase")

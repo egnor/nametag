@@ -6,7 +6,7 @@ from pathlib import Path
 
 import emoji  # type: ignore
 
-twemoji_dir = Path(__file__).parent / "twemoji" / "assets"
+twemoji_dir = Path(__file__).parent.parent / "external" / "twemoji" / "assets"
 
 links_dir = Path(__file__).parent / "emoji_links"
 shutil.rmtree(links_dir)
