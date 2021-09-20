@@ -17,9 +17,10 @@ import PIL.Image  # type: ignore
 @attr.define
 class ProtocolStep:
     packets: List[bytes]
-    confirm_regex: Optional[Pattern[bytes]] = None
-    retry_regex: Optional[Pattern[bytes]] = None
     delay_before: float = 0.0
+    retry_regex: Optional[Pattern[bytes]] = None
+    confirm_regex: Optional[Pattern[bytes]] = None
+    confirm_timeout: Optional[float] = None
 
 
 def _chunks(data: bytes, *, chunk_size: int) -> Iterable[bytes]:
@@ -55,6 +56,7 @@ def _bulk_steps(
 
         rep = _encode(struct.pack(">xHx", index), tag=tag)
         chunk_step.confirm_regex = re.compile(re.escape(rep))
+        chunk_step.confirm_timeout = 5.0
 
         assert rep[-2:] == b"\0\3"
         rx = re.escape(rep[:-2]) + b"([^\0]|\2[\5\6\7])" + re.escape(rep[-1:])

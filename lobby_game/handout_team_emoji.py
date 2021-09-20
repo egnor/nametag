@@ -77,85 +77,79 @@ def team_steps(team: int) -> List[nametag.protocol.ProtocolStep]:
 
 
 async def check_tag(
-    tag: nametag.bluetooth.ScanTag, config: lobby_game.tag_data.TagConfig
+    conn: nametag.bluetooth.Connection, config: lobby_game.tag_data.TagConfig
 ):
-    prefix = f"[{tag.code}] T#{config.team}"
-    steps = team_steps(config.team)
-    async with nametag.bluetooth.RetryConnection(
-        tag, connect_timeout=60, step_timeout=20, fail_timeout=60
-    ) as conn:
-        logging.info(f"{prefix} Connected, reading state stash...")
-        readback = await conn.readback()
-        state = lobby_game.tag_data.tagstate_from_readback(readback)
-        if not state:
-            logging.info(f"{prefix} No valid state stash, updating...")
-        elif state.phase != b"EMO":
-            phase = state.phase.decode()
-            logging.info(f'{prefix} Wrong phase "{phase}", updating...')
-        elif state.value != config.team:
-            logging.info(f"{prefix} Wrong team T#{state.value}, updating...")
-        else:
-            logging.info(f"{prefix} Valid phase/team, disconnecting...")
-            return
+    logging.info(f"{config} Connected, reading state stash...")
+    readback = await conn.readback()
+    state = lobby_game.tag_data.tagstate_from_readback(readback)
+    if not state:
+        logging.info(f"{config} No valid state stash, updating...")
+    elif state.phase != b"EMO":
+        phase = state.phase.decode()
+        logging.info(f'{config} Wrong phase "{phase}", updating...')
+    elif state.value != config.team:
+        logging.info(f"{config} Wrong team T#{state.value}, updating...")
+    else:
+        logging.info(f"{config} Good phase/team, disconnecting...")
+        return
 
-        await conn.do_steps(steps)
-        logging.info(f"{prefix} Done sending, disconnecting...")
-    logging.info(f"{prefix} Done and closed")
+    await conn.do_steps(team_steps(config.team))
+    logging.info(f"{config} Done sending, disconnecting...")
+    return True
 
 
 async def run(args):
     tag_config = lobby_game.tag_data.load_tagconfigs(args.config)
-    code_time: Dict[str, float] = {}
-    code_task: Dict[str, asyncio.Task] = {}
+    id_last_done: Dict[str, float] = {}
+    id_task: Dict[str, asyncio.Task] = {}
 
-    try:
-        logging.info("Starting scanner")
-        async with nametag.bluetooth.Scanner(adapter=args.adapter) as scanner:
-            while True:
-                now = time.time()
-                code_task = {c: t for c, t in code_task.items() if not t.done()}
-                diags: Dict[str, List[str]] = {}
-                visible = list(scanner.visible_tags())
-                visible.sort(key=lambda t: (code_time.get(t.code, 0), t.code))
-                for tag in visible:
-                    if tag.code not in tag_config:
-                        diags.setdefault("Unknown code", []).append(tag.code)
-                    elif not tag_config[tag.code].team:
-                        diags.setdefault("No team", []).append(tag.code)
-                    elif tag.code in code_task:
-                        diags.setdefault("In process", []).append(tag.code)
-                    elif now < code_time.get(tag.code, 0):
-                        diags.setdefault("Recently done", []).append(tag.code)
-                    elif tag.rssi <= -80:
-                        diags.setdefault("Weak signal", []).append(tag.code)
-                    elif len(code_task) >= 5:
-                        diags.setdefault("In queue", []).append(tag.code)
-                    else:
-                        diags.setdefault("Now connecting", []).append(tag.code)
-                        coro = check_tag(tag=tag, config=tag_config[tag.code])
-                        code_task[tag.code] = asyncio.create_task(coro)
-                        code_time[tag.code] = now + 60
+    logging.info("Starting scanner")
+    async with nametag.bluetooth.Scanner(adapter=args.adapter) as scanner:
+        while True:
+            now = time.time()
+            for id in (i for i, r in scanner.harvest_tasks().items() if r):
+                logging.info(f"{tag_config[id]} Done")
+                id_last_done[id] = now
 
-                logging.info(
-                    f"Checked {len(visible)} tags..."
-                    + "".join(
-                        f"\n  {message}: {', '.join(codes)}"
-                        for message, codes in sorted(diags.items())
-                    )
+            diags: Dict[str, List[lobby_game.tag_data.TagConfig]] = {}
+            visible = list(scanner.tags)
+            visible.sort(key=lambda t: (id_last_done.get(t.id, 0), t.id))
+            for tag in visible:
+                config = tag_config.get(tag.id)
+                if not config:
+                    anon = lobby_game.tag_data.TagConfig(tag.id)
+                    diags.setdefault("Unknown id", []).append(anon)
+                elif not config.team:
+                    diags.setdefault("No team", []).append(config)
+                elif tag.id in scanner.tasks:
+                    diags.setdefault("In process", []).append(config)
+                elif now < id_last_done.get(tag.id, 0) + 30:
+                    diags.setdefault("Recently done", []).append(config)
+                elif tag.rssi <= -80:
+                    diags.setdefault("Weak signal", []).append(config)
+                elif len(scanner.tasks) >= 5:
+                    diags.setdefault("In queue", []).append(config)
+                else:
+                    diags.setdefault("Now connecting", []).append(config)
+                    scanner.spawn_connection_task(tag, check_tag, config)
+
+            logging.info(
+                f"Checked {len(visible)} tags..."
+                + "".join(
+                    f"\n  {message}: {', '.join(repr(i) for i in ids)}"
+                    for message, ids in sorted(diags.items())
                 )
+            )
 
-                await asyncio.sleep(1.0)
-
-    finally:
-        if code_task:
-            logging.info(f"Waiting for {len(code_task)} tasks...")
-            asyncio.gather(*code_task.values(), return_exceptions=True)
-            logging.info("All tasks complete")
+            await asyncio.sleep(1.0)
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--adapter", default="hci0", help="BT interface")
 parser.add_argument("--config", help="Nametag list")
-
+parser.add_argument("--debug", action="store_true")
 args = parser.parse_args()
+if args.debug:
+    nametag.logging_setup.enable_debug()
+
 asyncio.run(run(args))

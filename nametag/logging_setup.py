@@ -40,6 +40,12 @@ def _exception_hook(exc_type, exc_value, exc_tb):
     )
 
 
+def enable_debug():
+    logging.getLogger().setLevel(logging.DEBUG)
+    logging.getLogger("asyncio").setLevel(logging.INFO)
+    logging.getLogger("bleak").setLevel(logging.INFO)
+
+
 # Initialize on import.
 _log_handler = logging.StreamHandler(stream=sys.stderr)
 _log_handler.setFormatter(_LogFormatter())

@@ -14,22 +14,14 @@ import nametag.bluetooth
 import nametag.logging_setup
 import nametag.protocol
 
-logging.getLogger().setLevel(logging.DEBUG)
-logging.getLogger("asyncio").setLevel(logging.INFO)
-logging.getLogger("bleak").setLevel(logging.INFO)
-
 parser = argparse.ArgumentParser()
 parser.add_argument("--adapter", default="hci0", help="BT interface")
+parser.add_argument("--debug", action="store_true")
 
 dev_group = parser.add_mutually_exclusive_group()
 dev_group.add_argument("--address", default="", help="MAC to address")
-dev_group.add_argument("--code", default="", help="Device code to find")
+dev_group.add_argument("--id", default="", help="Device ID to find")
 dev_group.add_argument("--save_tagsetup", help="Save setup to file")
-
-time_group = parser.add_argument_group("Timeouts")
-time_group.add_argument("--connect_timeout", type=float, default=10.0)
-time_group.add_argument("--step_timeout", type=float, default=5.0)
-time_group.add_argument("--fail_timeout", type=float, default=60.0)
 
 send_group = parser.add_argument_group("Commands to send")
 send_group.add_argument("--tagsetup", help="Load setup from file")
@@ -43,11 +35,14 @@ send_group.add_argument("--scroll_speed", type=int, help="Scrolling (0-255)")
 send_group.add_argument("--brightness", type=int, help="Brightness (0-255)")
 send_group.add_argument("--stash", help="Hex bytes to stash on device")
 send_group.add_argument("--repeat", type=int, default=1, help="Times to loop")
+send_group.add_argument("--timeout", type=float, default=60.0)
 
 args = parser.parse_args()
-steps: List[nametag.protocol.ProtocolStep] = []
+if args.debug:
+    nametag.logging_setup.enable_debug()
 
 print("=== Processing send command(s) ===")
+steps: List[nametag.protocol.ProtocolStep] = []
 
 if args.tagsetup:
     print(f"Loading setup: {args.tagsetup}")
@@ -127,53 +122,59 @@ if args.save_tagsetup:
     sys.exit(0)
 
 
+async def send_to_device(conn: nametag.bluetooth.Connection):
+    print("Connected, reading data stash...")
+    readback = await conn.readback()
+    stash = nametag.protocol.unstash_readback(readback)
+    if stash:
+        print(f"Found stash ({stash.hex()}), sending...")
+    else:
+        print("No data stash, sending...")
+    for r in range(args.repeat):
+        await conn.do_steps(steps)
+    print("Done sending, disconnecting...")
+    print()
+    return True
+
+
 async def run():
     print("=== Finding nametag ===")
-    last_print = 0.0
-    async with nametag.bluetooth.Scanner(adapter=args.adapter) as scanner:
+    next_print = 0.0
+    async with nametag.bluetooth.Scanner(adapter=args.adapter) as scan:
         while True:
-            visible = scanner.visible_tags()
+            if any(scan.harvest_tasks().values()):
+                break
+
+            if scan.tasks:
+                await asyncio.sleep(0.1)
+                continue  # Wait for task
+
             matched = [
                 d
-                for d in visible
+                for d in scan.tags
                 if args.address.lower() in (d.address.lower(), "")
-                and args.code.upper() in (d.code.upper(), "")
+                and args.id.upper() in (d.id.upper(), "")
             ]
 
             now = time.monotonic()
-            if matched or now - last_print >= 1.0:
-                last_print = now
-                if not visible:
+            if matched or now >= next_print:
+                next_print = now + 1.0
+                if not scan.tags:
                     print("No nametags found, scanning...")
                 else:
-                    print(f"Matched {len(matched)} of {len(visible)} nametags:")
-                    for d in visible:
+                    print(f"Matched {len(matched)} of {len(scan.tags)} tags:")
+                    for d in scan.tags:
                         match = "*" if d in matched else " "
-                        print(f"{match} {d.code} ({d.address}) rssi={d.rssi}")
+                        print(f"{match} {d.id} ({d.address}) rssi={d.rssi}")
                     print()
 
             if matched:
-                print(f"=== Connecting to nametag {matched[0].code} ===")
-                async with nametag.bluetooth.RetryConnection(
-                    matched[0],
-                    connect_timeout=args.connect_timeout,
-                    step_timeout=args.step_timeout,
-                    fail_timeout=args.fail_timeout,
-                ) as connection:
-                    readback = await connection.readback()
-                    stash = nametag.protocol.unstash_readback(readback)
-                    if stash:
-                        print(f"Found data stash: {stash.hex()}")
-                    else:
-                        print("(No data stash found)")
-
-                    for r in range(args.repeat):
-                        await connection.do_steps(steps)
-                break
+                print(f"=== Connecting to nametag {matched[0].id} ===")
+                scan.spawn_connection_task(
+                    matched[0], send_to_device, timeout=args.timeout
+                )
 
             await asyncio.sleep(0.1)
-
-    print()
 
 
 asyncio.run(run())

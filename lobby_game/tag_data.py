@@ -18,9 +18,21 @@ class TagState:
 
 @attr.define
 class TagConfig:
+    id: str
     team: int = 0
     flavor: str = ""
     note: str = ""
+
+    def __str__(self):
+        return repr(self) + (f" ({self.note})" if self.note else "")
+
+    def __repr__(self):
+        return (
+            f"[{self.id}"
+            + (f"/{self.flavor}" if self.flavor else "")
+            + (f"/T{self.team}" if self.team else "")
+            + "]"
+        )
 
 
 _tagstate_struct = struct.Struct("<4ph")
@@ -38,10 +50,10 @@ def steps_from_tagstate(s: TagState) -> Iterable[nametag.protocol.ProtocolStep]:
     return nametag.protocol.stash_data(stash)
 
 
-def load_tagconfigs(filename: Optional[str]=None) -> Dict[str, TagConfig]:
+def load_tagconfigs(filename: Optional[str] = None) -> Dict[str, TagConfig]:
     toml_converter = cattr.preconf.tomlkit.make_converter()
     toml_data = toml.load(filename or (Path(__file__).parent / "nametags.toml"))
     return {
-        key: toml_converter.structure(value, TagConfig)
-        for key, value in toml_data.items()
+        id: toml_converter.structure({"id": id, **value}, TagConfig)
+        for id, value in toml_data.items()
     }
