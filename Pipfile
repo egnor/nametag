@@ -8,6 +8,7 @@ Pillow = "*"
 crcmod = "*"
 attrs = "*"
 cattrs = "*"
+toml = "*"
 
 [dev-packages]
 black = "==21.7b0"

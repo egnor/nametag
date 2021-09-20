@@ -20,7 +20,7 @@ async def run():
     parser.add_argument("--code", default="", help="Device code to find")
     args = parser.parse_args()
 
-    fonts_dir = Path(__file__).parent.parent / "assets" / "fonts"
+    fonts_dir = Path(__file__).parent.parent / "external" / "fonts"
     font_path = fonts_dir / "OperatorMonoSSm-Bold.otf"
     font = PIL.ImageFont.truetype(str(font_path), 15)
     image = PIL.Image.new("1", (48, 12))

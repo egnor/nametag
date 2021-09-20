@@ -18,7 +18,7 @@ import nametag.protocol
 
 class ClockUpdater:
     def __init__(self):
-        fonts_dir = Path(__file__).parent.parent / "assets" / "fonts"
+        fonts_dir = Path(__file__).parent.parent / "external" / "fonts"
         font_path = fonts_dir / "OperatorMonoSSm-Bold.otf"
         self.font = PIL.ImageFont.truetype(str(font_path), 15)
         self.images = [PIL.Image.new("1", (48, 12)) for i in range(2)]
