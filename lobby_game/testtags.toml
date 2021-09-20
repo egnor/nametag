@@ -1,0 +1,8 @@
+# Test devices assigned to teams
+
+568B = { team = 1, flavor = "A", note = "test device, red color" }
+78E7 = { team = 2, flavor = "A", note = "test device, blue color" }
+94A0 = { team = 3, flavor = "B", note = "test device, slab type" }
+9799 = { team = 4, flavor = "B", note = "test device, slab type" }
+97EA = { team = 5, flavor = "C", note = "test device, slab type" }
+ABC0 = { team = 6, flavor = "C", note = "test device, darker board" }

@@ -1,54 +1,55 @@
-23a8 = { team = 1 }
-23bb = { team = 2 }
-2452 = { team = 3 }
-24c8 = { team = 4 }
-24c9 = { team = 5 }
-24cf = { team = 6 }
-24e7 = { team = 7 }
-2546 = { team = 8 }
-259b = { team = 9 }
-26a1 = { team = 10 }
-26d5 = { team = 11 }
-26e6 = { team = 12 }
-26ed = { team = 13 }
-270d = { team = 14 }
-2811 = { team = 15 }
-2984 = { team = 16 }
-29fc = { team = 17 }
-2a0b = { team = 18 }
-2a4a = { team = 19 }
-2ad8 = { team = 20 }
-2af0 = { team = 21 }
-568b = { team = 22 }
-7827 = { team = 23 }
-78bd = { team = 24 }
-78e7 = { team = 25 }
-79c2 = { team = 26 }
-7ad4 = { team = 27 }
-7add = { team = 28 }
-7e00 = { team = 29 }
-7e3d = { team = 30 }
-7e47 = { team = 31 }
-7e4c = { team = 32 }
-7e4e = { team = 33 }
-7e51 = { team = 34 }
-7e56 = { team = 35 }
-7e6a = { team = 36 }
-7e97 = { team = 37 }
-7ea2 = { team = 38 }
-7eb0 = { team = 39 }
-7eb1 = { team = 40 }
-7ec0 = { team = 41 }
-7ec5 = { team = 42 }
-7ed0 = { team = 43 }
-7edd = { team = 44 }
-7ee9 = { team = 45 }
-7eed = { team = 46 }
-7ef8 = { team = 47 }
-7f14 = { team = 48 }
-7f29 = { team = 49 }
-7fb9 = { team = 50 }
-94a0 = { team = 51 }
-9799 = { team = 52 }
-97ea = { team = 53 }
-abc0 = { team = 54 }
+23A8 = { team = 1,  flavor = "A" }
+23BB = { team = 2,  flavor = "A" }
+2452 = { team = 3,  flavor = "A" }
+24C8 = { team = 4,  flavor = "A" }
+24C9 = { team = 5,  flavor = "A" }
+24CF = { team = 6,  flavor = "A" }
+24E7 = { team = 7,  flavor = "A" }
+2546 = { team = 8,  flavor = "A" }
+259B = { team = 9,  flavor = "A" }
+26A1 = { team = 10, flavor = "A" }
+26D5 = { team = 11, flavor = "A" }
+26E6 = { team = 12, flavor = "A" }
+26ED = { team = 13, flavor = "A" }
+270D = { team = 14, flavor = "A" }
+2811 = { team = 15, flavor = "A" }
+2984 = { team = 16, flavor = "A" }
+29FC = { team = 17, flavor = "A" }
+2A0B = { team = 18, flavor = "A" }
+2A4A = { team = 19, flavor = "A" }
+2AD8 = { team = 20, flavor = "A" }
+2AF0 = { team = 21, flavor = "A" }
+7827 = { team = 23, flavor = "A" }
+78BD = { team = 24, flavor = "A" }
+79C2 = { team = 26, flavor = "A" }
+7AD4 = { team = 27, flavor = "A" }
+7ADD = { team = 28, flavor = "A" }
+7E00 = { team = 29, flavor = "A" }
+7E3D = { team = 30, flavor = "A" }
+7E47 = { team = 31, flavor = "A" }
+7E4C = { team = 32, flavor = "A" }
+7E4E = { team = 33, flavor = "A" }
+7E51 = { team = 34, flavor = "A" }
+7E56 = { team = 35, flavor = "A" }
+7E6A = { team = 36, flavor = "A" }
+7E97 = { team = 37, flavor = "A" }
+7EA2 = { team = 38, flavor = "A" }
+7EB0 = { team = 39, flavor = "A" }
+7EB1 = { team = 40, flavor = "B" }
+7EC0 = { team = 41, flavor = "C" }
+7EC5 = { team = 42, flavor = "B" }
+7ED0 = { team = 43, flavor = "C" }
+7EDD = { team = 44, flavor = "B" }
+7EE9 = { team = 45, flavor = "C" }
+7EED = { team = 46, flavor = "B" }
+7EF8 = { team = 47, flavor = "C" }
+7F14 = { team = 48, flavor = "B" }
+7F29 = { team = 49, flavor = "C" }
+7FB9 = { team = 50, flavor = "B" }
+
+568B = { note = "test device, red color" }
+78E7 = { note = "test device, blue color" }
+94A0 = { note = "test device, slab type" }
+9799 = { note = "test device, slab type" }
+97EA = { note = "test device, slab type" }
+ABC0 = { note = "test device, darker board" }

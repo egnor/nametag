@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
 
+import argparse
+import asyncio
+import logging
+import os
 import shutil
 import sys
+import time
 from pathlib import Path
 from typing import List, Tuple
 
 import PIL.Image  # type: ignore
 
+import lobby_game.tag_data
 import nametag.aseprite_loader
+import nametag.bluetooth
+import nametag.logging_setup
 import nametag.protocol
 
-TEAMS = 50
-
-EMOJIS = [
+TEAM_EMOJIS = [
     ["sparkles", "moon", "thumbs_up"],  # puzzlewise *last*, use for team x0
     ["star", "fire", "sun"],
     ["rainbow", "crown", "confetti_ball"],
@@ -26,57 +32,130 @@ EMOJIS = [
 ]
 
 
-def pad_glyph(image_path, spacing):
-    print(f"Glyph: {image_path} (pad={spacing})")
-    with PIL.Image.open(image_path) as loaded_image:
+def load_and_pad(image_path: str, spacing: int):
+    print(f"Loading: {image_path} (pad={spacing})")
+    art_dir = Path(__file__).parent.parent / "art"
+    with PIL.Image.open(art_dir / image_path) as loaded_image:
         padded_image = PIL.Image.new("1", (loaded_image.size[0] + spacing, 12))
         padded_image.paste(loaded_image, box=(0, 0) + loaded_image.size)
         return padded_image
 
 
-common_steps: List[nametag.protocol.ProtocolStep] = []
-common_steps.extend(nametag.protocol.set_brightness(255))
-common_steps.extend(nametag.protocol.set_speed(192))
-common_steps.extend(nametag.protocol.set_mode(2))
+loaded_emojis = {
+    emoji: load_and_pad(f"emoji/{emoji}.ase", 10)
+    for emoji in set(emoji for emojis in TEAM_EMOJIS for emoji in emojis)
+}
 
-art_dir = Path(__file__).parent
-gen_dir = art_dir / "generated"
-gen_dir.mkdir(exist_ok=True)
+loaded_logoteam = [
+    load_and_pad("lobby/lobby-logo.ase", 5),
+    load_and_pad("lobby/lobby-team.ase", 5),
+]
 
-for team in range(1, TEAMS):
-    print(f"=== team {team} ===")
+loaded_digits = {
+    digit: load_and_pad(f"lobby/lobby-{digit}.ase", 2) for digit in range(0, 10)
+}
+
+
+def team_steps(team: int) -> List[nametag.protocol.ProtocolStep]:
     glyphs: List[PIL.Image.Image] = []
 
     glyphs = (
-        [
-            pad_glyph(art_dir / "sources" / "emoji" / f"{emoji}.ase", 10)
-            for emoji in EMOJIS[team % 10]
-        ]
-        + [
-            pad_glyph(art_dir / "sources" / "lobby" / "lobby-logo.ase", 5),
-            pad_glyph(art_dir / "sources" / "lobby" / "lobby-team.ase", 5),
-        ]
-        + [
-            pad_glyph(art_dir / "sources" / "lobby" / f"lobby-{n}.ase", 2)
-            for n in str(team)
-        ]
+        [loaded_emojis[emoji] for emoji in TEAM_EMOJIS[team % 10]]
+        + loaded_logoteam
+        + [loaded_digits[int(d)] for d in str(team)]
     )
 
-    steps = common_steps[:] + list(nametag.protocol.show_glyphs(glyphs))
-    setup_path = gen_dir / f"lobby-intro-team{team:02d}.tagsetup"
-    print(f"Writing: {setup_path}")
-    with setup_path.open("w") as file:
-        file.write(nametag.protocol.to_str(steps))
-    print()
+    state = lobby_game.tag_data.TagState(b"EMO", value=team)
 
-print("=== emoji test ===")
-glyphs = [
-    pad_glyph(art_dir / "sources" / "emoji" / f"{emoji}.ase", 10)
-    for emoji in list(sorted(set(e for emojis in EMOJIS for e in emojis)))
-]
+    steps: List[nametag.protocol.ProtocolStep] = []
+    steps.extend(nametag.protocol.set_brightness(255))
+    steps.extend(nametag.protocol.set_speed(192))
+    steps.extend(nametag.protocol.set_mode(2))
+    steps.extend(nametag.protocol.show_glyphs(glyphs))
+    steps.extend(lobby_game.tag_data.steps_from_tagstate(state))
+    return steps
 
-steps = common_steps + list(nametag.protocol.show_glyphs(glyphs))
-test_path = gen_dir / "emoji-test.tagsetup"
-print(f"Writing: {test_path}")
-with test_path.open("w") as file:
-    file.write(nametag.protocol.to_str(steps))
+
+async def check_tag(
+    tag: nametag.bluetooth.ScanTag, config: lobby_game.tag_data.TagConfig
+):
+    prefix = f"[{tag.code}] T#{config.team}"
+    steps = team_steps(config.team)
+    async with nametag.bluetooth.RetryConnection(
+        tag, connect_timeout=60, step_timeout=20, fail_timeout=60
+    ) as conn:
+        logging.info(f"{prefix} Connected, reading state stash...")
+        readback = await conn.readback()
+        state = lobby_game.tag_data.tagstate_from_readback(readback)
+        if not state:
+            logging.info(f"{prefix} No valid state stash, updating...")
+        elif state.phase != b"EMO":
+            phase = state.phase.decode()
+            logging.info(f'{prefix} Wrong phase "{phase}", updating...')
+        elif state.value != config.team:
+            logging.info(f"{prefix} Wrong team T#{state.value}, updating...")
+        else:
+            logging.info(f"{prefix} Valid phase/team, disconnecting...")
+            return
+
+        await conn.do_steps(steps)
+        logging.info(f"{prefix} Done sending, disconnecting...")
+    logging.info(f"{prefix} Done and closed")
+
+
+async def run(args):
+    tag_config = lobby_game.tag_data.load_tagconfigs(args.config)
+    code_time: Dict[str, float] = {}
+    code_task: Dict[str, asyncio.Task] = {}
+
+    try:
+        logging.info("Starting scanner")
+        async with nametag.bluetooth.Scanner(adapter=args.adapter) as scanner:
+            while True:
+                now = time.time()
+                code_task = {c: t for c, t in code_task.items() if not t.done()}
+                diags: Dict[str, List[str]] = {}
+                visible = list(scanner.visible_tags())
+                visible.sort(key=lambda t: (code_time.get(t.code, 0), t.code))
+                for tag in visible:
+                    if tag.code not in tag_config:
+                        diags.setdefault("Unknown code", []).append(tag.code)
+                    elif not tag_config[tag.code].team:
+                        diags.setdefault("No team", []).append(tag.code)
+                    elif tag.code in code_task:
+                        diags.setdefault("In process", []).append(tag.code)
+                    elif now < code_time.get(tag.code, 0):
+                        diags.setdefault("Recently done", []).append(tag.code)
+                    elif tag.rssi <= -80:
+                        diags.setdefault("Weak signal", []).append(tag.code)
+                    elif len(code_task) >= 5:
+                        diags.setdefault("In queue", []).append(tag.code)
+                    else:
+                        diags.setdefault("Now connecting", []).append(tag.code)
+                        coro = check_tag(tag=tag, config=tag_config[tag.code])
+                        code_task[tag.code] = asyncio.create_task(coro)
+                        code_time[tag.code] = now + 60
+
+                logging.info(
+                    f"Checked {len(visible)} tags..."
+                    + "".join(
+                        f"\n  {message}: {', '.join(codes)}"
+                        for message, codes in sorted(diags.items())
+                    )
+                )
+
+                await asyncio.sleep(1.0)
+
+    finally:
+        if code_task:
+            logging.info(f"Waiting for {len(code_task)} tasks...")
+            asyncio.gather(*code_task.values(), return_exceptions=True)
+            logging.info("All tasks complete")
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--adapter", default="hci0", help="BT interface")
+parser.add_argument("--config", default="nametags.toml", help="Nametag list")
+
+args = parser.parse_args()
+asyncio.run(run(args))
