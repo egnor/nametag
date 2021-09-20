@@ -155,7 +155,7 @@ async def run(args):
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--adapter", default="hci0", help="BT interface")
-parser.add_argument("--config", default="nametags.toml", help="Nametag list")
+parser.add_argument("--config", help="Nametag list")
 
 args = parser.parse_args()
 asyncio.run(run(args))
