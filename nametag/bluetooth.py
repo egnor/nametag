@@ -74,9 +74,6 @@ class Scanner:
         return out
 
 
-connection_count = 0
-
-
 class Connection:
     def __init__(self, tag: ScanTag, *, timeout=None):
         self.tag = tag
@@ -110,14 +107,9 @@ class Connection:
         except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
             raise BluetoothError("Start notify", exc=e)
 
-        global connection_count
-        connection_count += 1
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
-        global connection_count
-        connection_count -= 1
-
         try:
             logger.debug(f"[{self.tag.code}] Disconnecting...")
             await self._exits.aclose()
