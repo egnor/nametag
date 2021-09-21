@@ -75,9 +75,8 @@ async def run(args):
             for tag in visible:
                 config = tag_config.get(tag.id)
                 if not config:
-                    anon = lobby_game.tag_data.TagConfig(tag.id)
-                    diags.setdefault("Unknown id", []).append(anon)
-                elif tag.id in scanner.tasks:
+                    config = lobby_game.tag_data.TagConfig(tag.id, flavor="?")
+                if tag.id in scanner.tasks:
                     diags.setdefault("In process", []).append(config)
                 elif tag.rssi <= -80 or not tag.rssi:
                     diags.setdefault("Weak signal", []).append(config)
@@ -105,7 +104,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--adapter", default="hci0", help="BT interface")
 parser.add_argument("--config", help="Nametag list")
 parser.add_argument("--debug", action="store_true")
-parser.add_argument("--station", type=int, default=1, help="Station ID")
+parser.add_argument("--station", type=int, required=True, help="Station ID")
 args = parser.parse_args()
 if args.debug:
     nametag.logging_setup.enable_debug()

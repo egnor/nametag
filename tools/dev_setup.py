@@ -8,7 +8,7 @@ os.chdir(str(Path(__file__).parent.parent))
 startup_venv = os.environ.get("VIRTUAL_ENV")
 
 print("=== Update system packages (apt) ===")
-apt_packages = ["direnv", "libjpeg-dev", "pipenv"]
+apt_packages = ["direnv", "libjpeg-dev", "libfreetype6-dev", "pipenv"]
 check_call(["sudo", "apt", "install"] + apt_packages)
 print()
 
