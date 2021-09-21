@@ -34,22 +34,22 @@ class ScanTag:
 
 
 class Scanner:
-    def __init__(self, *, adapter="hci0", restart_interval=10.0):
+    def __init__(self, *, adapter="hci0", toggle_interval=10.0):
         self.adapter = adapter
-        self.restart_interval = restart_interval
+        self.toggle_interval = toggle_interval
         self.tasks: Dict[str, asyncio.Task] = {}
         self._exits = contextlib.AsyncExitStack()
         self._scanner = None
-        self._bopper = None
+        self._toggler = None
 
     async def __aenter__(self):
         try:
-            assert self._scanner is None and self._bopper is None
+            assert self._scanner is None and self._toggler is None
             logger.debug("Starting scanner...")
             make_scanner = bleak.BleakScanner(adapter=self.adapter)
             self._scanner = await self._exits.enter_async_context(make_scanner)
             await self._scanner.start()
-            self._bopper = asyncio.create_task(self._scan_bopper())
+            self._toggler = asyncio.create_task(self._scan_toggler())
         except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
             raise BluetoothError("Scan start", exc=e)
         return self
@@ -57,8 +57,8 @@ class Scanner:
     async def __aexit__(self, exc_type, exc, tb):
         try:
             logger.debug("Stopping scanner...")
-            self._bopper.cancel()
-            asyncio.gather(self._bopper, return_exceptions=True)
+            self._toggler.cancel()
+            asyncio.gather(self._toggler, return_exceptions=True)
             await self._exits.aclose()
         except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
             logger.warning(f"Stopping scanner: {str(e) or type(e).__name__}")
@@ -69,17 +69,21 @@ class Scanner:
             asyncio.gather(*self.tasks.values(), return_exceptions=True)
             logger.debug("All tasks complete")
 
-        self._scanner = self._bopper = None
+        self._scanner = self._toggler = None
 
-    async def _scan_bopper(self):
-        while self.restart_interval:
-            await asyncio.sleep(self.restart_interval)
-            logger.debug(f"Bopping scanner off and back on")
+    async def _scan_toggler(self):
+        while self.toggle_interval:
+            await asyncio.sleep(self.toggle_interval)
+            logger.debug(f"Toggling scanner off and back on")
             try:
                 await self._scanner.stop()
+            except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
+                logger.warning(f"Toggling off: {str(e) or type(e).__name__}")
+
+            try:
                 await self._scanner.start()
             except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
-                logger.warning(f"Bopping scanner: {str(e) or type(e).__name__}")
+                logger.warning(f"Toggling on: {str(e) or type(e).__name__}")
 
     @property
     def tags(self) -> List[ScanTag]:
