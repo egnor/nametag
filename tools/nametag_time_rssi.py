@@ -39,9 +39,10 @@ async def run(args):
     logging.info("Starting scanner...")
     async with nametag.bluetooth.Scanner(adapter=args.adapter) as scan:
         while True:
-            logging.info("Scanning...")
             scan.harvest_tasks()
-            for tag in scan.tags:
+            visible = scan.tags
+            logging.info(f"Scanning: {' '.join(sorted(t.id for t in visible))}")
+            for tag in visible:
                 if tag.id in scan.tasks:
                     logging.debug(f"[{tag.id}] Update in progress...")
                 elif len(scan.tasks) >= 5:
