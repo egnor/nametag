@@ -63,12 +63,14 @@ async def run(args):
     tag_config = lobby_game.tag_data.load_tagconfigs(args.config)
     id_task: Dict[str, asyncio.Task] = {}
     id_time: Dict[str, float] = {}
+    last_time: float = 0.0
 
     logging.info("Starting scanner")
     async with nametag.bluetooth.Scanner(adapter=args.adapter) as scanner:
         while True:
             scanner.harvest_tasks()
 
+            now = time.time()
             diags: Dict[str, List[lobby_game.tag_data.TagConfig]] = {}
             visible = list(scanner.tags)
             visible.sort(key=lambda t: (id_time.get(t.id, 0), t.id))
@@ -80,14 +82,17 @@ async def run(args):
                     diags.setdefault("In process", []).append(config)
                 elif tag.rssi <= -80 or not tag.rssi:
                     diags.setdefault("Weak signal", []).append(config)
+                elif now < last_time + 0.5:
+                    diags.setdefault("Waiting", []).append(config)
                 elif len(scanner.tasks) >= 5:
                     diags.setdefault("In queue", []).append(config)
                 else:
                     diags.setdefault("Now connecting", []).append(config)
                     scanner.spawn_connection_task(
-                        tag, check_tag, config, args.station
+                        tag, check_tag, config, args.station, timeout=10
                     )
-                    id_time[tag.id] = time.time()
+                    id_time[tag.id] = now
+                    last_time = now
 
             logging.info(
                 f"Checked {len(visible)} tags..."
