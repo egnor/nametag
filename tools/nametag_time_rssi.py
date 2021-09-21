@@ -37,7 +37,9 @@ async def update_rssi(
 
 async def run(args):
     logging.info("Starting scanner...")
-    async with nametag.bluetooth.Scanner(adapter=args.adapter) as scan:
+    async with nametag.bluetooth.Scanner(
+        adapter=args.adapter, toggle_interval=args.toggle_interval
+    ) as scan:
         while True:
             scan.harvest_tasks()
             visible = scan.tags
@@ -45,6 +47,8 @@ async def run(args):
             for tag in visible:
                 if tag.id in scan.tasks:
                     logging.debug(f"[{tag.id}] Update in progress...")
+                elif not tag.rssi:
+                    logging.debug(f"[{tag.id}] No RSSI data...")
                 elif len(scan.tasks) >= 5:
                     logging.debug(f"[{tag.id}] Waiting for others...")
                 else:
@@ -57,6 +61,7 @@ async def run(args):
 parser = argparse.ArgumentParser()
 parser.add_argument("--adapter", default="hci0", help="BT interface")
 parser.add_argument("--debug", action="store_true")
+parser.add_argument("--toggle_interval", type=float, default=10.0)
 args = parser.parse_args()
 if args.debug:
     nametag.logging_setup.enable_debug()
