@@ -15,9 +15,9 @@ import nametag.bluetooth
 import nametag.logging_setup
 import nametag.protocol
 
-FONTS_DIR = Path(__file__).parent.parent / "external" / "fonts"
-FONT_PATH = FONTS_DIR / "Spartan-Bold.ttf"
-loaded_font = PIL.ImageFont.truetype(str(FONT_PATH), 10)
+fonts_dir = Path(__file__).parent.parent / "external" / "fonts"
+font_path = fonts_dir / "Spartan-Bold.ttf"
+loaded_font = PIL.ImageFont.truetype(str(font_path), 10)
 
 
 async def update_rssi(

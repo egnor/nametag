@@ -13,7 +13,7 @@ import nametag.protocol
 @attr.define
 class TagState:
     phase: bytes
-    value: int = 0  # 16 bit signed
+    number: int = 0  # 16 bit signed
 
 
 @attr.define

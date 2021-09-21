@@ -3,12 +3,9 @@
 import argparse
 import asyncio
 import logging
-import os
-import shutil
-import sys
 import time
 from pathlib import Path
-from typing import List, Tuple
+from typing import List
 
 import PIL.Image  # type: ignore
 
@@ -65,7 +62,7 @@ def team_steps(team: int) -> List[nametag.protocol.ProtocolStep]:
         + [loaded_digits[int(d)] for d in str(team)]
     )
 
-    state = lobby_game.tag_data.TagState(b"EMO", value=team)
+    state = lobby_game.tag_data.TagState(b"EMO", number=team)
 
     steps: List[nametag.protocol.ProtocolStep] = []
     steps.extend(nametag.protocol.set_brightness(255))
@@ -80,15 +77,13 @@ async def check_tag(
     conn: nametag.bluetooth.Connection, config: lobby_game.tag_data.TagConfig
 ):
     logging.info(f"{config} Connected, reading state stash...")
-    readback = await conn.readback()
-    state = lobby_game.tag_data.tagstate_from_readback(readback)
+    state = lobby_game.tag_data.tagstate_from_readback(await conn.readback())
     if not state:
         logging.info(f"{config} No valid state stash, updating...")
     elif state.phase != b"EMO":
-        phase = state.phase.decode()
-        logging.info(f'{config} Wrong phase "{phase}", updating...')
-    elif state.value != config.team:
-        logging.info(f"{config} Wrong team T#{state.value}, updating...")
+        logging.info(f'{config} Phase "{state.phase.decode()}", updating...')
+    elif state.number != config.team:
+        logging.info(f"{config} Team T#{state.number}, updating...")
     else:
         logging.info(f"{config} Good phase/team, disconnecting...")
         return
@@ -125,7 +120,7 @@ async def run(args):
                     diags.setdefault("In process", []).append(config)
                 elif now < id_last_done.get(tag.id, 0) + 30:
                     diags.setdefault("Recently done", []).append(config)
-                elif tag.rssi <= -80:
+                elif tag.rssi <= -80 or not tag.rssi:
                     diags.setdefault("Weak signal", []).append(config)
                 elif len(scanner.tasks) >= 5:
                     diags.setdefault("In queue", []).append(config)
