@@ -95,7 +95,7 @@ async def run(args):
                     last_time = now
 
             logging.info(
-                f"Checked {len(visible)} tags..."
+                f"Found {len(visible)} tags..."
                 + "".join(
                     f"\n  {message}: {', '.join(repr(i) for i in ids)}"
                     for message, ids in sorted(diags.items())
