@@ -36,9 +36,13 @@ async def check_tag(
     station: int,
 ):
     logging.info(f"{config} Connected, reading state stash...")
-    state = lobby_game.tag_data.tagstate_from_readback(await conn.readback())
-    if not state:
-        logging.info(f"{config} No valid state stash, updating...")
+    readback = await conn.readback()
+    state = lobby_game.tag_data.tagstate_from_readback(readback)
+    if not any(readback):
+        logging.info(f"{config} Blank state stash, updating...")
+        state = lobby_game.tag_data.TagState(b"STA", number=0)
+    elif not state:
+        logging.info(f"{config} Invalid state stash, updating...")
         state = lobby_game.tag_data.TagState(b"STA", number=0)
     elif state.phase != b"STA":
         phase = state.phase.decode()
