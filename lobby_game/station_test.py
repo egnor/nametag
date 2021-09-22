@@ -66,28 +66,29 @@ async def check_tag(
 async def run(args):
     tag_config = lobby_game.tag_data.load_tagconfigs(args.config)
     id_task: Dict[str, asyncio.Task] = {}
-    id_time: Dict[str, float] = {}
-    last_time: float = 0.0
+    id_try_time: Dict[str, float] = {}
+    id_done_time: Dict[str, float] = {}
 
     logging.info("Starting scanner")
     async with nametag.bluetooth.Scanner(adapter=args.adapter) as scanner:
         while True:
-            scanner.harvest_tasks()
-
             now = time.time()
+            for id in (id for id, r in scanner.harvest_tasks().items() if r):
+                id_done_time[id] = now
+
             diags: Dict[str, List[lobby_game.tag_data.TagConfig]] = {}
             visible = list(scanner.tags)
-            visible.sort(key=lambda t: (id_time.get(t.id, 0), t.id))
+            visible.sort(key=lambda t: (id_try_time.get(t.id, 0), t.id))
             for tag in visible:
                 config = tag_config.get(tag.id)
                 if not config:
                     config = lobby_game.tag_data.TagConfig(tag.id, flavor="?")
                 if tag.id in scanner.tasks:
                     diags.setdefault("In process", []).append(config)
+                elif now < id_done_time.get(tag.id, 0) + 30:
+                    diags.setdefault("Too soon", []).append(config)
                 elif tag.rssi <= -80 or not tag.rssi:
                     diags.setdefault("Weak signal", []).append(config)
-                elif now < last_time + 0.5:
-                    diags.setdefault("Waiting", []).append(config)
                 elif len(scanner.tasks) >= 5:
                     diags.setdefault("In queue", []).append(config)
                 else:
@@ -95,8 +96,7 @@ async def run(args):
                     scanner.spawn_connection_task(
                         tag, check_tag, config, args.station, timeout=10
                     )
-                    id_time[tag.id] = now
-                    last_time = now
+                    id_try_time[tag.id] = now
 
             logging.info(
                 f"Found {len(visible)} tags..."
