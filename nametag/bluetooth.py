@@ -74,7 +74,7 @@ class Scanner:
     async def _scan_toggler(self):
         while self.toggle_interval:
             await asyncio.sleep(self.toggle_interval)
-            logger.debug(f"Toggling scanner off and back on")
+            logger.info("Toggling scanner off and back on...")
             try:
                 await self._scanner.stop()
             except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
@@ -84,6 +84,7 @@ class Scanner:
                 await self._scanner.start()
             except (bleak.exc.BleakError, asyncio.TimeoutError) as e:
                 logger.warning(f"Toggling on: {str(e) or type(e).__name__}")
+            logger.debug("Scanner toggle complete")
 
     @property
     def tags(self) -> List[ScanTag]:
