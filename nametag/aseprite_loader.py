@@ -33,7 +33,7 @@ def image_from_ase(data: bytes, layer_index: Optional[int] = None):
 
         darkest_index = min(
             range(len(palette_data) // 4),
-            key=lambda i: sum(palette_data[4 * i : 4 * i + 4]),
+            key=lambda i: sum(palette_data[4 * i : 4 * i + 3]),
         )
         image.paste(darkest_index, box=(0, 0) + image.size)
 

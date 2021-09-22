@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Iterable
 
 import PIL.Image  # type: ignore
-import PIL.ImageFont  # type: ignore
 import PIL.ImageDraw  # type: ignore
+import PIL.ImageFont  # type: ignore
 
 import lobby_game.tag_data
 import nametag.bluetooth
