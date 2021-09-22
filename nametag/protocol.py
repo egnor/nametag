@@ -152,7 +152,7 @@ _converter = _make_converter()
 
 
 def to_str(steps: Iterable[ProtocolStep]) -> str:
-    return json.dumps(_converter.unstructure(steps))
+    return json.dumps(_converter.unstructure(list(steps)))
 
 
 def from_str(to_load: str) -> Iterable[ProtocolStep]:
