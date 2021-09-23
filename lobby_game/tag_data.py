@@ -14,6 +14,7 @@ import nametag.protocol
 class TagState:
     phase: bytes
     number: int = 0  # 16 bit signed
+    string: bytes = b""  # Up to 12 bytes
 
 
 @attr.define
@@ -35,18 +36,20 @@ class TagConfig:
         )
 
 
-_tagstate_struct = struct.Struct("<4ph")
+_state_struct = struct.Struct("<4ph")
 
 
 def tagstate_from_readback(data: bytes) -> Optional[TagState]:
     stash = nametag.protocol.unstash_readback(data)
-    if stash and len(stash) == _tagstate_struct.size:
-        return TagState(*_tagstate_struct.unpack(stash))
+    if stash and len(stash) >= _state_struct.size:
+        fixed, tail = stash[: _state_struct.size], stash[_state_struct.size :]
+        phase, number = _state_struct.unpack(fixed)
+        return TagState(phase=phase, number=number, string=tail)
     return None  # No/invalid stashed data.
 
 
 def steps_from_tagstate(s: TagState) -> Iterable[nametag.protocol.ProtocolStep]:
-    stash = _tagstate_struct.pack(*attr.astuple(s))
+    stash = _state_struct.pack(s.phase, s.number) + s.string
     return nametag.protocol.stash_data(stash)
 
 
