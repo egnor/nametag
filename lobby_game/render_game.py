@@ -45,7 +45,7 @@ def image_of_text(frame_path: Path, font_dir: Path, text: str) -> PIL.Image:
             f"({frame.size[0]},{frame.size[1]}): {frame_path}"
         )
 
-    left_x = int((first_x + frame.size[0] - text_w) / 2.0)
+    left_x = (first_x + frame.size[0] - text_w + 1) // 2
     pasted = frame.copy()
     for glyph in glyphs:
         pasted.paste(glyph, box=(left_x, frame.size[1] - text_h))
