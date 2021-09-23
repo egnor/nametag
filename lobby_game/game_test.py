@@ -19,7 +19,7 @@ def try_ghost(
         ghost_id=ghost_id, config=config, state=state
     )
 
-    if content and content.status_title in ("start", "new", "success"):
+    if content and content.status_title in ("start", "next", "success"):
         print(
             f"{'  ' * depth}G{ghost_id} -> "
             f'{content.status_title} "{content.status_word}"'
@@ -28,15 +28,15 @@ def try_ghost(
 
         lobby_game.render_game.steps_for_content(content)
 
-        new_state = lobby_game.tag_data.TagState(
+        next_state = lobby_game.tag_data.TagState(
             phase=b"GAM",
             number=content.ghost_id,
             string=content.status_word.encode(),
         )
 
-        try_ghost(1, config, new_state, depth + 1)
-        try_ghost(2, config, new_state, depth + 1)
-        try_ghost(3, config, new_state, depth + 1)
+        try_ghost(1, config, next_state, depth + 1)
+        try_ghost(2, config, next_state, depth + 1)
+        try_ghost(3, config, next_state, depth + 1)
 
 
 logging.getLogger().setLevel(logging.WARNING)

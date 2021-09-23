@@ -125,8 +125,8 @@ def content_for_tag(
         logging.info(f"{old_text} -> G{ghost_id} No change (success)")
         return None
 
-    new_word = NEXT_WORD.get(ghost_id, {}).get(last_word)
-    if not new_word:
+    next_word = NEXT_WORD.get(ghost_id, {}).get(last_word)
+    if not next_word:
         logging.info(f'{old_text} X> G{ghost_id} "{start}" restart')
         return DisplayContent(
             ghost_id=ghost_id,
@@ -136,14 +136,14 @@ def content_for_tag(
             status_word=start,
         )
 
-    status_title = "success" if new_word in SUCCESS_WORDS else "new"
-    logging.info(f'{old_text} => G{ghost_id} "{new_word}" {status_title}')
+    status_title = "success" if next_word in SUCCESS_WORDS else "next"
+    logging.info(f'{old_text} => G{ghost_id} "{next_word}" {status_title}')
     return DisplayContent(
         ghost_id=ghost_id,
         ghost_action="accept",
         ghost_word=last_word,
         status_title=status_title,
-        status_word=new_word,
+        status_word=next_word,
     )
 
 
