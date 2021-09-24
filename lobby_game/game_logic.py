@@ -84,6 +84,7 @@ class DisplayContent:
     ghost_id: int = 0
     ghost_action: str = ""
     ghost_word: str = ""
+    new_state: Optional[lobby_game.tag_data.TagState] = None
 
 
 def content_for_tag(
@@ -93,26 +94,23 @@ def content_for_tag(
 ) -> Optional[DisplayContent]:
     start = FLAVOR_START.get(config.flavor, "BADTAG")
 
+    content = DisplayContent(
+        ghost_id=ghost_id,
+        status_title="start",
+        status_word=f'"{start}"',
+        new_state=lobby_game.tag_data.TagState(
+            phase=b"GAM", number=ghost_id, string=start.encode()
+        ),
+    )
+
     if not state:
         logging.info(f'{config} No state >> G{ghost_id} "{start}" reset')
-        return DisplayContent(
-            ghost_id=ghost_id,
-            ghost_action="say",
-            ghost_word="RESET?",
-            status_title="start",
-            status_word=start,
-        )
+        return attr.evolve(content, ghost_action="say", ghost_word="RESET?")
 
     if state.phase != b"GAM":
         phase = state.phase.decode(errors="replace")
         logging.info(f'{config} Phase "{phase}" >> G{ghost_id} "{start}" start')
-        return DisplayContent(
-            ghost_id=ghost_id,
-            ghost_action="say",
-            ghost_word="HELLO",
-            status_title="start",
-            status_word=start,
-        )
+        return attr.evolve(content, ghost_action="say", ghost_word="HELLO")
 
     last_word = state.string.decode(errors="replace")
     last_ghost = state.number
@@ -125,25 +123,22 @@ def content_for_tag(
         logging.info(f"{old_text} -> G{ghost_id} No change (success)")
         return None
 
+    content.ghost_word = f'"{last_word}"'
     next_word = NEXT_WORD.get(ghost_id, {}).get(last_word)
     if not next_word:
         logging.info(f'{old_text} X> G{ghost_id} "{start}" restart')
-        return DisplayContent(
-            ghost_id=ghost_id,
-            ghost_action="reject",
-            ghost_word=last_word,
-            status_title="restart",
-            status_word=start,
+        return attr.evolve(
+            content, ghost_action="reject", status_title="restart"
         )
 
     status_title = "success" if next_word in SUCCESS_WORDS else "next"
     logging.info(f'{old_text} => G{ghost_id} "{next_word}" {status_title}')
-    return DisplayContent(
-        ghost_id=ghost_id,
+    return attr.evolve(
+        content,
         ghost_action="accept",
-        ghost_word=last_word,
         status_title=status_title,
-        status_word=next_word,
+        status_word=f'"{next_word}"',
+        new_state=attr.evolve(content.new_state, string=next_word.encode()),
     )
 
 

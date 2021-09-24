@@ -1,7 +1,6 @@
-import functools
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import attr
 import PIL.Image  # type: ignore
@@ -13,17 +12,22 @@ import nametag.protocol
 
 art_dir = Path(__file__).parent.parent / "art"
 lobby_dir = art_dir / "lobby"
+image_cache: Dict[Path, PIL.Image.Image] = {}
 
 
-@functools.cache
-def get_image(path: Path) -> PIL.Image:
-    logging.info(f"Loading image: {path}")
-    image = PIL.Image.open(path).convert(mode="1")
-    image.info.pop("transparency", None)  # Work around PILlow bug
+def get_image(path: Path) -> PIL.Image.Image:
+    image = image_cache.get(path)
+    if not image:
+        logging.info(f"Loading image: {path}")
+        image = PIL.Image.open(path).convert(mode="1")
+        image.info.pop("transparency", None)  # Work around PILlow bug
+        image_cache[path] = image
     return image
 
 
-def image_of_text(frame_path: Path, font_dir: Path, text: str) -> PIL.Image:
+def image_of_text(
+    frame_path: Path, font_dir: Path, text: str
+) -> PIL.Image.Image:
     frame = get_image(frame_path)
     glyphs = [get_image(font_dir / (ch + ".ase")) for ch in text]
 
@@ -56,7 +60,7 @@ def image_of_text(frame_path: Path, font_dir: Path, text: str) -> PIL.Image:
 def steps_for_content(
     content: lobby_game.game_logic.DisplayContent,
 ) -> List[nametag.protocol.ProtocolStep]:
-    frames: List[PIL.Image] = []
+    frames: List[PIL.Image.Image] = []
     blank_image = PIL.Image.new("1", (48, 12))
 
     if content.ghost_id and content.ghost_action:
@@ -64,7 +68,7 @@ def steps_for_content(
         ghost_image = image_of_text(
             frame_path=lobby_dir / frame_name,
             font_dir=art_dir / "font",
-            text=f'"{content.ghost_word}"',
+            text=content.ghost_word,
         )
 
         frames.append(ghost_image)
@@ -78,7 +82,7 @@ def steps_for_content(
             font_dir=art_dir / "font-bold",
             text=word,
         )
-        for word in ("", f'"{content.status_word}"')
+        for word in ("", content.status_word)
     ]
 
     frames.append(title_blank_image)
@@ -92,16 +96,11 @@ def steps_for_content(
     frames.append(status_word_image)
     frames.append(blank_image)
 
-    tag_state = lobby_game.tag_data.TagState(
-        phase=b"GAM",
-        number=content.ghost_id,
-        string=content.status_word.encode(),
-    )
-
     steps: List[nametag.protocol.ProtocolStep] = []
     steps.extend(nametag.protocol.set_brightness(255))
     steps.extend(nametag.protocol.show_frames(frames, msec=500))
-    steps.extend(lobby_game.tag_data.steps_from_tagstate(tag_state))
+    if content.new_state:
+        steps.extend(lobby_game.tag_data.steps_from_tagstate(content.new_state))
     return steps
 
 
