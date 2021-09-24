@@ -68,7 +68,7 @@ def steps_for_content(
         ghost_image = image_of_text(
             frame_path=lobby_dir / frame_name,
             font_dir=art_dir / "font",
-            text=content.ghost_word,
+            text=content.ghost_text,
         )
 
         frames.append(ghost_image)
@@ -76,24 +76,24 @@ def steps_for_content(
         frames.append(ghost_image)
         frames.append(blank_image)
 
-    title_blank_image, status_word_image = [
+    title_blank_image, status_text_image = [
         image_of_text(
             frame_path=lobby_dir / f"title-{content.status_title}.ase",
             font_dir=art_dir / "font-bold",
             text=word,
         )
-        for word in ("", content.status_word)
+        for word in ("", content.status_text)
     ]
 
     frames.append(title_blank_image)
-    frames.append(status_word_image)
+    frames.append(status_text_image)
     frames.append(title_blank_image)
-    frames.append(status_word_image)
+    frames.append(status_text_image)
     frames.append(title_blank_image)
-    frames.append(status_word_image)
-    frames.append(status_word_image)
-    frames.append(status_word_image)
-    frames.append(status_word_image)
+    frames.append(status_text_image)
+    frames.append(status_text_image)
+    frames.append(status_text_image)
+    frames.append(status_text_image)
     frames.append(blank_image)
 
     steps: List[nametag.protocol.ProtocolStep] = []
@@ -119,9 +119,9 @@ if __name__ == "__main__":  # For testing
     cg = parser.add_argument_group("Write tagsetup")
     cg.add_argument("--ghost_id", type=int, default=0)
     cg.add_argument("--ghost_action", default="")
-    cg.add_argument("--ghost_word", default="")
+    cg.add_argument("--ghost_text", default="")
     cg.add_argument("--status_title", default="start")
-    cg.add_argument("--status_word", default="HELLO")
+    cg.add_argument("--status_text", default="HELLO")
     cg.add_argument("--save_tagsetup", type=Path)
 
     args = parser.parse_args()
@@ -137,9 +137,9 @@ if __name__ == "__main__":  # For testing
         content = lobby_game.game_logic.DisplayContent(
             ghost_id=args.ghost_id,
             ghost_action=args.ghost_action,
-            ghost_word=args.ghost_word,
+            ghost_text=args.ghost_text,
             status_title=args.status_title,
-            status_word=args.status_word,
+            status_text=args.status_text,
         )
 
         steps = steps_for_content(content)

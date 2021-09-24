@@ -80,10 +80,10 @@ for reversible in NEXT_WORD[2], NEXT_WORD[3]:
 @attr.define
 class DisplayContent:
     status_title: str
-    status_word: str
+    status_text: str
     ghost_id: int = 0
     ghost_action: str = ""
-    ghost_word: str = ""
+    ghost_text: str = ""
     new_state: Optional[lobby_game.tag_data.TagState] = None
 
 
@@ -97,7 +97,7 @@ def content_for_tag(
     content = DisplayContent(
         ghost_id=ghost_id,
         status_title="start",
-        status_word=f'"{start}"',
+        status_text=f'"{start}"',
         new_state=lobby_game.tag_data.TagState(
             phase=b"GAM", number=ghost_id, string=start.encode()
         ),
@@ -105,12 +105,12 @@ def content_for_tag(
 
     if not state:
         logging.info(f'{config} No state >> G{ghost_id} "{start}" reset')
-        return attr.evolve(content, ghost_action="say", ghost_word="RESET?")
+        return attr.evolve(content, ghost_action="say", ghost_text="RESET?")
 
     if state.phase != b"GAM":
         phase = state.phase.decode(errors="replace")
         logging.info(f'{config} Phase "{phase}" >> G{ghost_id} "{start}" start')
-        return attr.evolve(content, ghost_action="say", ghost_word="HELLO")
+        return attr.evolve(content, ghost_action="say", ghost_text="HELLO")
 
     last_word = state.string.decode(errors="replace")
     last_ghost = state.number
@@ -123,7 +123,7 @@ def content_for_tag(
         logging.info(f"{old_text} -> G{ghost_id} No change (success)")
         return None
 
-    content.ghost_word = f'"{last_word}"'
+    content.ghost_text = f'"{last_word}"'
     next_word = NEXT_WORD.get(ghost_id, {}).get(last_word)
     if not next_word:
         logging.info(f'{old_text} X> G{ghost_id} "{start}" restart')
@@ -137,7 +137,7 @@ def content_for_tag(
         content,
         ghost_action="accept",
         status_title=status_title,
-        status_word=f'"{next_word}"',
+        status_text=f'"{next_word}"',
         new_state=attr.evolve(content.new_state, string=next_word.encode()),
     )
 
@@ -176,8 +176,8 @@ if __name__ == "__main__":
     else:
         print(
             f"=> Display: ghost=[id={content.ghost_id} "
-            f'action={content.ghost_action} word="{content.ghost_word}"] '
-            f'title={content.status_title} word="{content.status_word}"'
+            f'action={content.ghost_action} word="{content.ghost_text}"] '
+            f'title={content.status_title} word="{content.status_text}"'
         )
 
         steps = lobby_game.render_game.steps_for_content(content)
