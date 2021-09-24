@@ -15,6 +15,17 @@ lobby_dir = art_dir / "lobby"
 image_cache: Dict[Path, PIL.Image.Image] = {}
 
 
+KERNING = {
+    ('"', "A"): -1,
+    ('"', "J"): -1,
+    ("A", '"'): -1,
+    ("A", "T"): -1,
+    ("L", "T"): -1,
+    ("T", "A"): -1,
+    ("T", "J"): -1,
+}
+
+
 def get_image(path: Path) -> PIL.Image.Image:
     image = image_cache.get(path)
     if not image:
@@ -30,8 +41,9 @@ def image_of_text(
 ) -> PIL.Image.Image:
     frame = get_image(frame_path)
     glyphs = [get_image(font_dir / (ch + ".ase")) for ch in text]
+    spacing = list(1 + KERNING.get(ab, 0) for ab in zip(text[:-1], text[1:]))
 
-    text_w = sum(g.size[0] for g in glyphs) + max(0, len(glyphs) - 1)
+    text_w = sum(g.size[0] for g in glyphs) + sum(spacing)
     text_h = max((g.size[1] for g in glyphs), default=0)
     if text_w > frame.size[0] or text_h > frame.size[1]:
         raise ValueError(
@@ -41,19 +53,19 @@ def image_of_text(
 
     cropped = frame.crop((0, frame.size[1] - text_h) + frame.size)
     proj_x, proj_y = cropped.getprojection()
-    first_x = max((i + 1 for i, v in enumerate(proj_x) if v), default=0)
-    if text_w > frame.size[0] - first_x:
+    gap_x = max((i + 1 for i, v in enumerate(proj_x) if v), default=0)
+    if text_w > frame.size[0] - gap_x:
         raise ValueError(
             f'Text "{text}" ({text_w}x{text_h}) '
-            f"doesn't fit blank ({first_x},{frame.size[1] - text_h})-"
+            f"doesn't fit blank ({gap_x},{frame.size[1] - text_h})-"
             f"({frame.size[0]},{frame.size[1]}): {frame_path}"
         )
 
-    left_x = (first_x + frame.size[0] - text_w + 1) // 2
+    left_x = (gap_x + frame.size[0] - text_w + 1) // 2
     pasted = frame.copy()
-    for glyph in glyphs:
+    for glyph, space_after in zip(glyphs, spacing + [0]):
         pasted.paste(glyph, box=(left_x, frame.size[1] - text_h))
-        left_x += glyph.size[0] + 1
+        left_x += glyph.size[0] + space_after
     return pasted
 
 
@@ -112,7 +124,7 @@ if __name__ == "__main__":  # For testing
     parser = argparse.ArgumentParser()
     ig = parser.add_argument_group("Write frame image")
     ig.add_argument("--frame", type=Path, default=lobby_dir / "title-start.ase")
-    ig.add_argument("--text", default="HELLO")
+    ig.add_argument("--text", default='"HELLO"')
     ig.add_argument("--font", type=Path, default=art_dir / "font-bold")
     ig.add_argument("--save_image", type=Path)
 
@@ -140,6 +152,7 @@ if __name__ == "__main__":  # For testing
             ghost_text=args.ghost_text,
             status_title=args.status_title,
             status_text=args.status_text,
+            new_state=lobby_game.tag_data.TagState(phase=b"GAM"),
         )
 
         steps = steps_for_content(content)

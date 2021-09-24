@@ -22,7 +22,7 @@ def try_ghost(
     if content and content.status_title in ("start", "next", "success"):
         print(
             f"{'  ' * depth}G{ghost_id} -> "
-            f'{content.status_title} {content.status_text}'
+            f"{content.status_title} {content.status_text}"
             f"{' *****' if content.status_title == 'success' else ''}"
         )
 
@@ -34,7 +34,7 @@ def try_ghost(
 
 logging.getLogger().setLevel(logging.WARNING)
 
-for flavor in ["A", "B", "C"]:
+for flavor in lobby_game.game_logic.FLAVOR_START.keys():
     print(f"=== {flavor} ===")
     config = lobby_game.tag_data.TagConfig(id="XXXX", flavor=flavor)
     state = lobby_game.tag_data.TagState(phase=b"ZZZ")
