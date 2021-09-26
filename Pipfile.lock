@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "6256b359f045bb1661225c0b1fb41e5863934ebbae59ff5d48ccefc255af828b"
+            "sha256": "c3ebdc50a27b44913ca5df82fe89c5f94226a777d5eb7b6205b5e9212114af79"
         },
         "pipfile-spec": 6,
         "requires": {},
@@ -121,6 +121,13 @@
         }
     },
     "develop": {
+        "adafruit-nrfutil": {
+            "hashes": [
+                "sha256:b72103dc8e50f92951f512fc2b6f2c621dac1614531ddf8c0be3b13d020e24ad"
+            ],
+            "index": "pypi",
+            "version": "==0.5.3.post16"
+        },
         "appdirs": {
             "hashes": [
                 "sha256:7d5d0167b2b1ba821647616af46a749d1c653740dd0d2415100fe26e27afdf41",
@@ -142,6 +149,13 @@
                 "sha256:fba402a4a47334742d782209a7c79bc448911afe1149d07bdabdf480b3e2f4b6"
             ],
             "version": "==8.0.1"
+        },
+        "ecdsa": {
+            "hashes": [
+                "sha256:5cf31d5b33743abe0dfc28999036c849a69d548f994b535e527ee3cb7f3ef676",
+                "sha256:b9f500bb439e4153d0330610f5d26baaf18d17b8ced1bc54410d189385ea68aa"
+            ],
+            "version": "==0.17.0"
         },
         "emoji": {
             "hashes": [
@@ -201,6 +215,13 @@
             ],
             "version": "==0.9.0"
         },
+        "pyserial": {
+            "hashes": [
+                "sha256:3c77e014170dfffbd816e6ffc205e9842efb10be9f58ec16d3e8675b4925cddb",
+                "sha256:c4451db6ba391ca6ca299fb3ec7bae67a5c55dde170964c7a14ceefec02f2cf0"
+            ],
+            "version": "==3.5"
+        },
         "regex": {
             "hashes": [
                 "sha256:04f6b9749e335bb0d2f68c707f23bb1773c3fb6ecd10edf0f04df12a8920d468",
@@ -246,6 +267,13 @@
                 "sha256:f60667673ff9c249709160529ab39667d1ae9fd38634e006bec95611f632e759"
             ],
             "version": "==2021.8.28"
+        },
+        "six": {
+            "hashes": [
+                "sha256:1e61c37477a1626458e36f7b1d82aa5c9b094fa4802892072e49de9c60c4c926",
+                "sha256:8abb2f1d86890a2dfb989f9a77cfcfd3e47c2a354b01111771326f8aa26e0254"
+            ],
+            "version": "==1.16.0"
         },
         "toml": {
             "hashes": [

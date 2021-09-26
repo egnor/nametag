@@ -1,0 +1,20 @@
+{
+	"platforms": {
+		"adafruit:nrf52": "1.0.0"
+	},
+	"boardUrls": [
+		"https://www.adafruit.com/package_adafruit_index.json"
+	],
+	"libraries": {
+		"Adafruit NeoPixel": "1.8.7"
+	},
+	"builds": {
+		"bluefruit": {
+			"directory": ".",
+			"sketch": "bluefruit.ino",
+			"baud": 115200,
+			"fqbn": "adafruit:nrf52:cplaynrf52840",
+			"props": {}
+		}
+	}
+}

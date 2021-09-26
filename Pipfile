@@ -18,6 +18,7 @@ types-attrs = "*"
 emoji = "*"
 typed-ast = "*"
 types-toml = "*"
+adafruit-nrfutil = "*"
 
 [packages.bleak]
 git = "https://github.com/hbldh/bleak"

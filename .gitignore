@@ -1,6 +1,9 @@
 .*.swp
+
 *.pyc
 __pycache__/
 
+.ardi/
+build/
+
 /*.png
-bluefruit/.ardi
