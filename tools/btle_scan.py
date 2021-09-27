@@ -73,13 +73,16 @@ async def find_and_probe_device(args: argparse.Namespace):
                     async with bleak.BleakClient(dev) as client:
                         await probe_device(client, args)
                     break
+            else:
+                elapsed = time.monotonic() - start_time
+                if elapsed > args.time:
+                    print(f"Not found after {elapsed:.1f}s")
+                    print()
 
-            elapsed = time.monotonic() - start_time
-            if elapsed > args.time:
-                print(f"Not found after {elapsed:.1f}s")
-                print()
+                await asyncio.sleep(0.1)
+                continue
 
-            await asyncio.sleep(0.1)
+            break
 
 
 async def probe_device(client: bleak.BleakClient, args: argparse.Namespace):
