@@ -193,7 +193,6 @@ static void bluetooth_poll() {
 
   if (conn_pending == 0) {
     static const ble_gap_scan_params_t scan_params = {
-      .active = 0,
       .interval = 23,
       .window = 13,
     };
@@ -470,8 +469,8 @@ static void on_conn_command(const String &args) {
   }
 
   static const ble_gap_scan_params_t conn_scan_params = {
-    .interval = 37,
-    .window = 31,
+    .interval = 23,
+    .window = 13,
     .timeout = 300,  // *10ms = 3 sec
   };
 
