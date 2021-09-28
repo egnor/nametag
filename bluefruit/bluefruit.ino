@@ -1,3 +1,6 @@
+#include <ctype.h>
+#include <stdio.h>
+
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
 #include <Adafruit_TinyUSB.h>
@@ -6,6 +9,13 @@
 #include <nrfx_power.h>
 
 // Adafruit_NeoPixel pixels(10, 8, NEO_GRB + NEO_KHZ800);
+
+static void input_poll();
+static void on_input_line(char *);
+static void on_conn_command(char *);
+static void on_disconn_command(char *);
+static void on_read_command(char *);
+static void on_write_command(char *);
 
 static void bluetooth_setup();
 static void bluetooth_poll();
@@ -20,30 +30,24 @@ static void on_bt_write_done(const ble_gattc_evt_t *);
 static void on_bt_fault(uint32_t, uint32_t, uint32_t);
 extern "C" void tusb_hal_nrf_power_event(uint32_t);
 
-static void input_poll();
-static void on_input_line();
-static void on_conn_command(const String &);
-static void on_disconn_command(const String &);
-static void on_read_command(const String &);
-static void on_write_command(const String &);
-
-static void print_address(const ble_gap_addr_t *);
+static const char *split_word(char **);
+static void decode_escaped(char *);
 static void print_escaped(const uint8_t *, int);
+static void print_address(const ble_gap_addr_t *);
 
 static uint8_t scan_data[BLE_GAP_SCAN_BUFFER_MAX];
 static const ble_data_t scan_data_info = {scan_data, sizeof(scan_data)};
 static bool show_scan = true;
 static int conn_pending = 0;
 
-String input_line;
-static enum { INPUT_TEXT, INPUT_HEX1, INPUT_HEX2 } input_state = INPUT_TEXT;
+char input_line[256];
+int input_size = 0;
 static uint32_t next_status_millis = 0;
 
 void setup() {
   Serial.begin(115200);
   while (!Serial) delay(1);
   bluetooth_setup();
-  input_line.reserve(256);
 }
 
 void loop() {
@@ -56,6 +60,186 @@ void loop() {
   bluetooth_poll();
   input_poll();
 }
+
+static void input_poll() {
+  while (Serial.available()) {
+    const char ch = Serial.read(); 
+    if (ch == '\r' or ch == '\n') {
+      input_line[input_size] = '\0';
+      on_input_line(input_line);
+      input_size = 0;
+    } else if (ch < 32 || ch >= 128) {
+      Serial.printf("*** ERR=bad_input ascii=%d\n", ch);
+    } else if (input_size >= sizeof(input_line) - 1) {
+      Serial.printf("*** ERR=bad_input length=%d\n", input_size);
+      input_size = 0;
+    } else {
+      input_line[input_size++] = ch;
+    }
+  }
+}
+
+static void on_input_line(char *line) {
+  const char *word = split_word(&line);
+  if (!strcmp(word, "echo")) {
+    const int size = decode_escaped(line);
+    Serial.print("echo line=");
+    print_escaped(line, size, "\n");
+  } else if (!strcmp(word, "conn")) {
+    on_conn_command(line);
+  } else if (!strcmp(word, "disconn")) {
+    on_disconn_command(line);
+  } else if (!strcmp(word, "read")) {
+    on_read_command(line);
+  } else if (!strcmp(word, "write")) {
+    on_write_command(line);
+  } else if (!strcmp(word, "hide")) {
+    show_scan = false;
+    Serial.println("scan_show=false");
+  } else if (!strcmp(word, "show")) {
+    show_scan = true;
+    Serial.println("scan_show=true");
+  } else if (*word) {
+    Serial.printf("*** ERR=bad_input command=");
+    print_escaped(word);
+    Serial.println();
+  }
+}
+
+static void on_conn_command(const char *args) {
+  const char *word = split_word(&args);
+  ble_gap_addr_t a = {};
+  int len = 0;
+  const int addr_bytes = sscanf(
+      addr_text, "%02x:%02x:%02x:%02x:%02x:%02x%n",
+      a.addr[5], a.addr[4], a.addr[3], a.addr[2], a.addr[1], a.addr[0], &len
+  );
+  if (addr_bytes != 6) {
+    Serial.print("*** ERR=bad_input conn_addr=");
+    print_escaped(attr_text);
+    Serial.println();
+    return;
+  }
+
+  if (!strcmp(addr_text + len, "/pub")) {
+    addr.addr_type = BLE_GAP_ADDR_TYPE_PUBLIC;
+  } else if (!strcmp(addr_text + len, "/rst")) {
+    addr.addr_type = BLE_GAP_ADDR_TYPE_RANDOM_STATIC;
+  } else if (!strcmp(addr_text + len, "/rpr")) {
+    addr.addr_type = BLE_GAP_ADDR_TYPE_RANDOM_PRIVATE_RESOLVABLE;
+  } else if (!strcmp(addr_text + len, "/rpn")) {
+    addr.addr_type = BLE_GAP_ADDR_TYPE_RANDOM_PRIVATE_NON_RESOLVABLE;
+  } else if (addr_text[len]) {
+    Serial.printf("*** ERR=bad_input conn_addr=\"%s\"\n", addr_text);
+    return;
+  }
+
+  static const ble_gap_scan_params_t conn_scan_params = {
+    .interval = 23,
+    .window = 13,
+    .timeout = 300,  // *10ms = 3 sec
+  };
+
+  static const ble_gap_conn_params_t connect_params = {
+    .min_conn_interval = 13,
+    .max_conn_interval = 13,  // *1.25ms
+    .slave_latency = 4,
+    .conn_sup_timeout = 300,  // *10ms = 3 sec
+  };
+
+  const auto connect_error = sd_ble_gap_connect(
+      &addr, &conn_scan_params, &connect_params, BLE_CONN_CFG_TAG_DEFAULT
+  );
+  if (connect_error != NRF_SUCCESS) {
+    Serial.printf("*** ERR=sd_ble_gap_connect code=0x%x\n", connect_error);
+    return;
+  }
+  Serial.print("conn_start=");
+  print_address(&addr);
+  Serial.printf(" pending=%d\n", ++conn_pending);
+}
+
+static void on_disconn_command(const String &args) {
+  char *end;
+  const int handle = strtoul(args.c_str(), &end, 10);
+  if (*end) {
+    Serial.printf("*** ERR=bad_input disconn=\"%s\"\n", args.c_str());
+    return;
+  }
+  const auto disconn_error = sd_ble_gap_disconnect(
+      handle, BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION
+  );
+  if (disconn_error != NRF_SUCCESS) {
+    Serial.printf("*** ERR=sd_ble_gap_disconnect code=0x%x\n", disconn_error);
+    return;
+  }
+  Serial.printf("disconn_start=%d\n", handle);
+}
+
+static void on_read_command(const String &args) {
+  const char *arg = args.c_str();
+  char *end;
+  const int conn = strtoul(arg, &end, 10);
+  if (end == arg) {
+    Serial.printf("*** ERR=bad_input read=\"%s\"\n", arg);
+    return;
+  }
+
+  for (arg = end; *arg == ' '; ++arg) {}
+  const int attr = strtoul(arg, &end, 10);
+  if (end == arg || *end) {
+    Serial.printf("*** ERR=bad_input read=\"%s\"\n", arg);
+    return;
+  }
+
+  const auto read_error = sd_ble_gattc_read(conn, attr, 0);
+  if (read_error != NRF_SUCCESS) {
+    Serial.printf("*** ERR=sd_ble_gattc_read code=0x%x\n", read_error);
+    if (read_error == NRF_ERROR_TIMEOUT) {
+      sd_ble_gap_disconnect(conn, BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
+    }
+    return;
+  }
+  Serial.printf("read_start handle=%d attr=%d\n", conn, attr);
+}
+
+static void on_write_command(const String &args) {
+  const char *arg = args.c_str();
+  char *end;
+  const int conn = strtoul(arg, &end, 10);
+  if (end == arg) {
+    Serial.printf("*** ERR=bad_input write=\"%s\"\n", arg);
+    return;
+  }
+
+  for (arg = end; *arg == ' '; ++arg) {}
+  const int attr = strtoul(arg, &end, 10);
+  if (end == arg) {
+    Serial.printf("*** ERR=bad_input write=\"%s\"\n", arg);
+    return;
+  }
+
+  for (arg = end; *arg == ' '; ++arg) {}
+  String data(arg);
+  decode_escaped(&data);
+
+  const ble_gattc_write_params_t write_params = {
+    .write_op = BLE_GATT_OP_WRITE_CMD,
+    .handle = attr,
+    .len = data.length(),
+    .p_value = (const uint8_t *) data.c_str(),
+  };
+  const auto write_error = sd_ble_gattc_write(conn, &write_params);
+  if (write_error != NRF_SUCCESS) {
+    Serial.printf("*** ERR=sd_ble_gattc_write code=0x%x\n", write_error);
+    if (write_error == NRF_ERROR_TIMEOUT) {
+      sd_ble_gap_disconnect(conn, BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
+    }
+    return;
+  }
+  Serial.printf("write_start handle=%d attr=%d\n", conn, attr);
+}
+
 
 static void bluetooth_setup() {
   // Disable TinyUSB peripheral event handlers (needed by SD).
@@ -384,196 +568,6 @@ static void on_bt_fault(uint32_t id, uint32_t pc, uint32_t info) {
   }
 }
 
-static void input_poll() {
-  while (Serial.available()) {
-    const char ch = Serial.read(); 
-    if (ch == '\r' or ch == '\n') {
-      input_line.trim();
-      if (input_line.length()) on_input_line();
-      input_line.remove(0);
-    } else if (ch < 32 || ch >= 128) {
-      Serial.printf("*** ERR=bad_input ascii=%d\n", ch);
-    } else if (input_line.length() >= 255) {
-      Serial.printf("*** ERR=bad_input length=%d\n", input_line.length());
-      input_line.remove(0);
-    } else {
-      input_line += ch;
-    }
-  }
-}
-
-static void on_input_line() {
-  if (input_line.startsWith("echo ")) {
-    String copy = input_line.substring(5);
-    copy.trim();
-    decode_escaped(&copy);
-    Serial.print("echo line=");
-    print_escaped((uint8_t *) copy.c_str(), copy.length());
-    Serial.println();
-  } else if (input_line.startsWith("conn ")) {
-    on_conn_command(input_line.substring(5));
-  } else if (input_line.startsWith("disconn ")) {
-    on_disconn_command(input_line.substring(8));
-  } else if (input_line.startsWith("read ")) {
-    on_read_command(input_line.substring(5));
-  } else if (input_line.startsWith("write ")) {
-    on_write_command(input_line.substring(6));
-  } else if (input_line == "mute") {
-    show_scan = false;
-    Serial.println("scan_show=false");
-  } else if (input_line == "show") {
-    show_scan = true;
-    Serial.println("scan_show=true");
-  } else {
-    Serial.printf("*** ERR=bad_input command=\"%s\"\n", input_line.c_str());
-  }
-}
-
-static void on_conn_command(const String &args) {
-  ble_gap_addr_t addr = {};
-  int byte_index = 5;
-  const char *pch = args.c_str();
-  while (*pch) {
-    char *end;
-    const int b = strtoul(pch, &end, 16);
-    if (end > pch) {
-      if (b < 0 || b > 0xff || byte_index < 0) {
-        Serial.printf("*** ERR=bad_input conn_addr=\"%s\"\n", pch);
-        return;
-      } else {
-        addr.addr[byte_index--] = b;
-        pch = end;
-      }
-    } else if (*pch == ':' || *pch == '/' || *pch == ' ') {
-      ++pch;
-    } else if (!strncmp(pch, "pub", 3)) {
-      addr.addr_type = BLE_GAP_ADDR_TYPE_PUBLIC;
-      pch += 3;
-    } else if (!strncmp(pch, "rst", 3)) {
-      addr.addr_type = BLE_GAP_ADDR_TYPE_RANDOM_STATIC;
-      pch += 3;
-    } else if (!strncmp(pch, "rpr", 3)) {
-      addr.addr_type = BLE_GAP_ADDR_TYPE_RANDOM_PRIVATE_RESOLVABLE;
-      pch += 3;
-    } else if (!strncmp(pch, "rpn", 3)) {
-      addr.addr_type = BLE_GAP_ADDR_TYPE_RANDOM_PRIVATE_NON_RESOLVABLE;
-      pch += 3;
-    } else {
-      Serial.printf("*** ERR=bad_input conn_addr=\"%s\"\n", pch);
-      return;
-    }
-  }
-  if (byte_index >= 0) {
-    Serial.printf("*** ERR=bad_input conn=\"%s\"\n", args.c_str());
-    return;
-  }
-
-  static const ble_gap_scan_params_t conn_scan_params = {
-    .interval = 23,
-    .window = 13,
-    .timeout = 300,  // *10ms = 3 sec
-  };
-
-  static const ble_gap_conn_params_t connect_params = {
-    .min_conn_interval = 13,
-    .max_conn_interval = 13,  // *1.25ms
-    .slave_latency = 4,
-    .conn_sup_timeout = 300,  // *10ms = 3 sec
-  };
-
-  const auto connect_error = sd_ble_gap_connect(
-      &addr, &conn_scan_params, &connect_params, BLE_CONN_CFG_TAG_DEFAULT
-  );
-  if (connect_error != NRF_SUCCESS) {
-    Serial.printf("*** ERR=sd_ble_gap_connect code=0x%x\n", connect_error);
-    return;
-  }
-  Serial.print("conn_start=");
-  print_address(&addr);
-  Serial.printf(" pending=%d\n", ++conn_pending);
-}
-
-static void on_disconn_command(const String &args) {
-  char *end;
-  const int handle = strtoul(args.c_str(), &end, 10);
-  if (*end) {
-    Serial.printf("*** ERR=bad_input disconn=\"%s\"\n", args.c_str());
-    return;
-  }
-  const auto disconn_error = sd_ble_gap_disconnect(
-      handle, BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION
-  );
-  if (disconn_error != NRF_SUCCESS) {
-    Serial.printf("*** ERR=sd_ble_gap_disconnect code=0x%x\n", disconn_error);
-    return;
-  }
-  Serial.printf("disconn_start=%d\n", handle);
-}
-
-static void on_read_command(const String &args) {
-  const char *arg = args.c_str();
-  char *end;
-  const int conn = strtoul(arg, &end, 10);
-  if (end == arg) {
-    Serial.printf("*** ERR=bad_input read=\"%s\"\n", arg);
-    return;
-  }
-
-  for (arg = end; *arg == ' '; ++arg) {}
-  const int attr = strtoul(arg, &end, 10);
-  if (end == arg || *end) {
-    Serial.printf("*** ERR=bad_input read=\"%s\"\n", arg);
-    return;
-  }
-
-  const auto read_error = sd_ble_gattc_read(conn, attr, 0);
-  if (read_error != NRF_SUCCESS) {
-    Serial.printf("*** ERR=sd_ble_gattc_read code=0x%x\n", read_error);
-    if (read_error == NRF_ERROR_TIMEOUT) {
-      sd_ble_gap_disconnect(conn, BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
-    }
-    return;
-  }
-  Serial.printf("read_start handle=%d attr=%d\n", conn, attr);
-}
-
-static void on_write_command(const String &args) {
-  const char *arg = args.c_str();
-  char *end;
-  const int conn = strtoul(arg, &end, 10);
-  if (end == arg) {
-    Serial.printf("*** ERR=bad_input write=\"%s\"\n", arg);
-    return;
-  }
-
-  for (arg = end; *arg == ' '; ++arg) {}
-  const int attr = strtoul(arg, &end, 10);
-  if (end == arg) {
-    Serial.printf("*** ERR=bad_input write=\"%s\"\n", arg);
-    return;
-  }
-
-  for (arg = end; *arg == ' '; ++arg) {}
-  String data(arg);
-  decode_escaped(&data);
-
-  const ble_gattc_write_params_t write_params = {
-    .write_op = BLE_GATT_OP_WRITE_CMD,
-    .handle = attr,
-    .len = data.length(),
-    .p_value = (const uint8_t *) data.c_str(),
-  };
-  const auto write_error = sd_ble_gattc_write(conn, &write_params);
-  if (write_error != NRF_SUCCESS) {
-    Serial.printf("*** ERR=sd_ble_gattc_write code=0x%x\n", write_error);
-    if (write_error == NRF_ERROR_TIMEOUT) {
-      sd_ble_gap_disconnect(conn, BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
-    }
-    return;
-  }
-  Serial.printf("write_start handle=%d attr=%d\n", conn, attr);
-}
-
 static void print_address(const ble_gap_addr_t *addr) {
   if (addr->addr_type == BLE_GAP_ADDR_TYPE_ANONYMOUS) {
     Serial.print("anon");
@@ -602,35 +596,36 @@ static void print_address(const ble_gap_addr_t *addr) {
   }
 }
 
-static void decode_escaped(String *str) {
-  int index = 0;
-  while (index < str->length()) {
-    const char ch = str->charAt(index);
-    if (ch == '"') {
-      str->remove(index, 1);
-    } else if (ch == '^') {
-      char *end;
-      const auto hex = str->substring(index + 1, index + 3);
-      str->setCharAt(index, strtoul(hex.c_str(), &end, 16));
-      str->remove(index + 1, 2);
-      if (*end) {
-        Serial.printf("*** ERR=bad_input escape=\"%s\"\n", hex.c_str());
-      }
-    } else {
-      ++index;
-    }
-  }
+static const char *split_word(char **str) {
+  while (isspace(**str)) ++*str;
+  const char *begin = *str;
+  while (**str && !isspace(**str)) ++*str;
+  while (**str && isspace(**str)) *(*str)++ = '\0';
+  return begin;
 }
 
-static void print_escaped(const uint8_t *bytes, int size) {
-  Serial.print("\"");
-  for (int i = 0; i < size; ++i) {
-    const auto b = bytes[i];
-    if (b >= 32 && b < 128 && b != '^' && b != '"') {
-      Serial.write(b);
+static int decode_escaped(char *str) {
+  char *out = str, *in = str;
+  while (*in) {
+    if (*in == '%' && isxdigit(in[1]) && isxdigit(in[2])) {
+      const char hex[] = {in[1], in[2], 0};
+      *out++ = strtoul(hex, NULL, 16);
+      in += 3;
     } else {
-      Serial.printf("^%02x", b);
+      *out++ = *in++;
     }
   }
-  Serial.print("\"");
+  *out = '\0';
+  return out - str;
+}
+
+static void print_escaped(const void *data, int size) {
+  for (int i = 0; i < size; ++i) {
+    const auto b = ((const uint8_t *) data)[i];
+    if (b > 32 && b < 128 && b != '%') {
+      Serial.write(b);
+    } else {
+      Serial.printf("%%%02x", b);
+    }
+  }
 }
