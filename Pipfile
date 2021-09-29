@@ -10,6 +10,7 @@ attrs = "*"
 cattrs = "*"
 toml = "*"
 pyserial = "*"
+logfmt = "*"
 
 [dev-packages]
 black = "==21.7b0"

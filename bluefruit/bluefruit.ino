@@ -45,7 +45,7 @@ static uint32_t next_status_millis = 0;
 
 void setup() {
   Serial.begin(115200);
-  while (!Serial) delay(1);
+  while (!Serial) delay(10);
   bluetooth_setup();
 }
 
@@ -76,13 +76,19 @@ static void input_poll() {
       input_line[input_size++] = ch;
     }
   }
+
+  if (!Serial) {
+    for (int h = 0; h < 20; ++h) {
+      sd_ble_gap_disconnect(h, BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
+    }
+  }
 }
 
 static void on_input_line(char *line) {
   const char *command = split_word(&line);
   if (!strcmp(command, "echo")) {
     const int size = decode_escaped(line);
-    Serial.print("echo line=");
+    Serial.print("echo=");
     print_escaped(line, size);
     Serial.println();
   } else if (!strcmp(command, "conn")) {
@@ -95,10 +101,10 @@ static void on_input_line(char *line) {
     on_write_command(line);
   } else if (!strcmp(command, "hide")) {
     show_scan = false;
-    Serial.println("scan_show=false");
+    Serial.println("show=false");
   } else if (!strcmp(command, "show")) {
     show_scan = true;
-    Serial.println("scan_show=true");
+    Serial.println("show=true");
   } else if (*command) {
     Serial.printf("*** ERR=input command=\"%s\"", command);
     Serial.println();
@@ -153,7 +159,9 @@ static void on_conn_command(char *args) {
   const auto connect_error = sd_ble_gap_connect(
       &addr, &conn_scan_params, &connect_params, BLE_CONN_CFG_TAG_DEFAULT);
   if (connect_error != NRF_SUCCESS) {
-    Serial.printf("*** ERR=sd_ble_gap_connect code=0x%x\n", connect_error);
+    Serial.print("*** conn_fail=");
+    print_address(&addr);
+    Serial.printf(" code=0x%x\n", connect_error);
     return;
   }
   Serial.print("conn_start=");
@@ -177,10 +185,11 @@ static void on_disconn_command(char *args) {
   const auto disconn_error = sd_ble_gap_disconnect(
       handle, BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
   if (disconn_error != NRF_SUCCESS) {
-    Serial.printf("*** ERR=sd_ble_gap_disconnect code=0x%x\n", disconn_error);
+    Serial.printf(
+        "*** disconn_fail conn=%d code=0x%x\n", handle, disconn_error);
     return;
   }
-  Serial.printf("disconn_start=%d\n", handle);
+  Serial.printf("disconn_start conn=%d\n", handle);
 }
 
 static void on_read_command(char *args) {
@@ -205,7 +214,9 @@ static void on_read_command(char *args) {
 
   const auto read_error = sd_ble_gattc_read(conn_handle, attr_handle, 0);
   if (read_error != NRF_SUCCESS) {
-    Serial.printf("*** ERR=sd_ble_gattc_read code=0x%x\n", read_error);
+    Serial.printf(
+        "*** read_fail conn=%d attr=%d code=0x%x\n",
+        conn_handle, attr_handle, read_error);
     if (read_error == NRF_ERROR_TIMEOUT) {
       sd_ble_gap_disconnect(
           conn_handle, BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
@@ -245,7 +256,9 @@ static void on_write_command(char *args) {
   };
   const auto write_error = sd_ble_gattc_write(conn_handle, &write_params);
   if (write_error != NRF_SUCCESS) {
-    Serial.printf("*** ERR=sd_ble_gattc_write code=0x%x\n", write_error);
+    Serial.printf(
+        "*** write_fail conn=%d attr=%d code=0x%x\n",
+        conn_handle, attr_handle, write_error);
     if (write_error == NRF_ERROR_TIMEOUT) {
       sd_ble_gap_disconnect(
           conn_handle, BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
@@ -507,16 +520,16 @@ static void on_bt_update_request(
 static void on_bt_timeout(uint16_t h, const ble_gap_evt_timeout_t *timeout) {
   switch (timeout->src) {
     case BLE_GAP_TIMEOUT_SRC_SCAN:
-      Serial.printf("scan_timeout\n");
+      Serial.printf("*** scan_timeout\n");
       break;
     case BLE_GAP_TIMEOUT_SRC_CONN:
-      Serial.printf("conn_timeout\n");
+      Serial.printf("*** conn_fail timeout\n");
       break;
     case BLE_GAP_TIMEOUT_SRC_AUTH_PAYLOAD:
-      Serial.printf("auth_timeout conn=%d\n", h);
+      Serial.printf("*** auth_timeout conn=%d\n", h);
       break;
     default:
-      Serial.printf("timeout src=%d\n", timeout->src);
+      Serial.printf("*** timeout src=%d\n", timeout->src);
       break;
   }
 }
@@ -529,7 +542,7 @@ static void on_bt_read_reply(const ble_gattc_evt_t *e) {
     Serial.println();
   } else {
     Serial.printf(
-        "read conn=%d attr=%d error=0x%x\n",
+        "*** read_fail conn=%d attr=%d status=0x%x\n",
         e->conn_handle, e->error_handle, e->gatt_status);
   }
 }
@@ -540,7 +553,7 @@ static void on_bt_write_done(const ble_gattc_evt_t *e) {
     Serial.printf("write conn=%d done=%d\n", e->conn_handle, wr->count);
   } else {
     Serial.printf(
-        "write conn=%d attr=%d error=0x%x\n",
+        "*** write_fail conn=%d attr=%d status=0x%x\n",
         e->conn_handle, e->error_handle, e->gatt_status);
   }
 }
@@ -623,7 +636,7 @@ static int decode_escaped(char *str) {
 static void print_escaped(const void *data, int size) {
   for (int i = 0; i < size; ++i) {
     const auto b = ((const uint8_t *) data)[i];
-    if (b > 32 && b < 128 && b != '%') {
+    if (b > 32 && b < 128 && b != '%' && b != '"') {
       Serial.write(b);
     } else {
       Serial.printf("%%%02x", b);

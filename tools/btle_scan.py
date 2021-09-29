@@ -132,15 +132,7 @@ async def write_device(client: bleak.BleakClient, args: argparse.Namespace):
     print()
 
 
-async def run():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--adapter", default="hci0", help="BT interface")
-    parser.add_argument("--time", type=int, default=2, help="Scan seconds")
-    parser.add_argument("--name", default="", help="Name substring")
-    parser.add_argument("--address", help="MAC of device to probe")
-    parser.add_argument("--write", help="'uuid=hexbytes' or '#handle=hexbytes'")
-    args = parser.parse_args()
-
+async def run(args):
     if args.write and not args.address:
         parser.error("--write without --address")
 
@@ -160,5 +152,15 @@ async def run():
         print_devices(devices, args)
 
 
-if __name__ == "__main__":
-    asyncio.run(run())
+parser = argparse.ArgumentParser()
+parser.add_argument("--adapter", default="hci0", help="BT interface")
+parser.add_argument("--debug", action="store_true")
+parser.add_argument("--time", type=int, default=2, help="Scan seconds")
+parser.add_argument("--name", default="", help="Name substring")
+parser.add_argument("--address", help="MAC of device to probe")
+parser.add_argument("--write", help="'uuid=hexbytes' or '#handle=hexbytes'")
+args = parser.parse_args()
+if args.debug:
+    nametag.logging_setup.enable_debug()
+
+asyncio.run(run(args))

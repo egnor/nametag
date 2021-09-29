@@ -1,4 +1,4 @@
-# Hardware access to the nametag via bluepy (see protocol.py for encoding)
+# Hardware access to the nametag via bleak (see protocol.py for encoding)
 
 import asyncio
 import contextlib
@@ -14,9 +14,9 @@ import bleak  # type: ignore
 import bleak.backends.device  # type: ignore
 import bleak.exc  # type: ignore
 
-from .protocol import ProtocolStep
+from nametag.protocol import ProtocolStep
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("bluetooth")
 
 
 class BluetoothError(Exception):
@@ -109,11 +109,6 @@ class Scanner:
         async def _connect():
             async with Connection(tag, timeout=timeout) as connection:
                 return await asyncf(connection, *args, **kwargs)
-
-        async def _task():
-            time_text = f" ({timeout:.1f}s timeout)" if timeout else ""
-            logger.debug(f"[{tag.id}] Starting connection task{time_text}...")
-            await asyncio.wait_for(_connect(), timeout=timeout)
 
         if tag.id in self.tasks:
             raise ValueError(f"Another task running for {tag.id}")
