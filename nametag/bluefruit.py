@@ -8,7 +8,7 @@ import urllib.parse
 from typing import Dict, List, Optional
 
 import attr
-import logfmt.parser
+import logfmt.parser  # type: ignore
 import serial  # type: ignore
 
 from nametag.protocol import ProtocolStep
@@ -21,30 +21,42 @@ class BluefruitError(Exception):
 
 
 @attr.define
-class Nametag:
-    address: str
+class Tag:
+    addr: str
     id: str
-    time: float = 0.0
+    monotime: float = attr.ib(default=0.0, repr=lambda t: f"{t:.3f}")
     rssi: int = 0
-    handle: Optional[int] = None
 
-    connect_result: Optional[asyncio.Future] = attr.ib(default=None, repr=False)
-    read_results: Dict[int, asyncio.Future] = attr.ib(factory=dict, repr=False)
-    write_results: List[asyncio.Future] = attr.ib(factory=list, repr=False)
+    _handle_factory = lambda: _set_future(-1)
+    handle: asyncio.Future[int] = attr.ib(factory=_handle_factory, repr=False)
+    reads: Dict[int, asyncio.Future[bytes]] = attr.ib(factory=dict, repr=False)
+    writes: List[asyncio.Future[bool]] = attr.ib(factory=list, repr=False)
 
+    @property
+    def fully_connected(self):
+        h = self.handle
+        return h.done() and not h.exception() and h.result() >= 0
+
+    @property
+    def fully_disconnected(self):
+        h = self.handle
+        return h.done() and (h.exception() or h.result() < 0)
 
 
 class Bluefruit:
     def __init__(self, *, port):
-        self.tags: Dict[str, Nametag] = {}
-        self._serial = _SerialPort(port=port)
+        self.tags: Dict[str, Tag] = {}
+        self.busy_connecting: int = 0
+        self._handles: Dict[int, Tag] = {}
+        self._serial: _SerialPort = _SerialPort(port=port)
         self._reader: asyncio.Task = None
         self._exception: Exception = None
+        self._scanning_mono: float = 0.0
 
     async def __aenter__(self):
         self._serial.__enter__()
-        self._serial.write(b"show\n")
         self._reader = asyncio.create_task(self._reader_task())
+        self._send_serial("show")
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
@@ -55,12 +67,15 @@ class Bluefruit:
         except asyncio.CancelledError:
             pass
         for tag in self.tags.values():
-            if tag.connect_result and not tag.connect_result.done():
-                tag.connect_result.set_exception(BluefruitError("Stopped"))
-            for read_result in tag.read_results.values():
-                read_result.set_exception(BluefruitError("Stopped"))
-            for write_result in tag.write_results:
-                write_result.set_exception(BluefruitError("Stopped"))
+            if tag.handle and not tag.handle.done():
+                tag.handle.set_exception(BluefruitError("Stopped"))
+                tag.handle.exception()  # Avoid warning if not accessed
+            for read in [r for r in tag.reads.values() if not r.done()]:
+                read.set_exception(BluefruitError("Stopped"))
+                read.exception()  # Avoid warning if not accessed
+            for write in [w for w in tag.writes if not w.done()]:
+                write.set_exception(BluefruitError("Stopped"))
+                write.exception()  # Avoid warning if not accessed
 
     async def _reader_task(self):
         try:
@@ -77,93 +92,201 @@ class Bluefruit:
                     line_count += 1
         except Exception as exc:
             self._exception = exc
-            logger.critical(f"Reader failed: {repr(exc)}")
+            logger.critical(f"Reader failed ({type(exc).__name__}): {exc}")
             raise
 
-    def _on_serial_line(self, line):
-        text = line.decode(errors="ignore").strip()
-        values = logfmt.parser.parse_line(text)
-        values = {k: v for k, v in values.items() if k.isidentifier()}
-        if values:
-            first_key = next(iter(values.keys()))
-            method = getattr(self, f"_on_{first_key}_message", None)
-            if method:
-                method(values)
+    def _send_serial(self, line: str):
+        logger.debug(f"=> {line}")
+        self._serial.write(("\n" + line + "\n").encode(encoding="L1"))
+
+    def _on_serial_line(self, line: bytes):
+        message = _InputMessage(line)
+        if message:
+            first_key = next(iter(message.keys()))
+            dispatch_method = getattr(self, f"_on_{first_key}_message", None)
+            if dispatch_method:
+                dispatch_method(message)
             if first_key not in ("scan", "time", "ERR"):
-                logger.debug(f"{'=>' if method else '->'} {text}")
+                logger.debug(f"{'<=' if dispatch_method else '<-'} {message}")
 
-    def _on_ERR_message(self, values):
-        text = " ".join(f"{k}={v}" for k, v in values.items())
-        logger.warning(f"Bluefruit error: {text}")
+    def _on_ERR_message(self, message):
+        logger.error(f"Bluefruit error: {message}")
 
-    def _on_scan_message(self, values):
-        uuids = set(int(u, 16) for u in values.get("u", "").split(",") if u)
-        mdata = self._to_binary(values.get("m", ""))
-        if not (0xfff0 in uuids and mdata[6:8] == b"\xff\xff"):
+    def _on_scan_message(self, message):
+        self._on_scan_start_message(message)  # For startup or backstop
+        uuids = set(int(u, 16) for u in message.get("u", "").split(",") if u)
+        mdata = self._to_binary(message.get("m", ""))
+        if not (0xFFF0 in uuids and mdata[6:8] == b"\xff\xff"):
             return
 
-        address = values["scan"]
-        tag = self.tags.get(address)
+        addr = message["scan"]
+        tag = self.tags.get(addr)
         if not tag:
             id = mdata[1::-1].hex().upper()
-            tag = self.tags[address] = Nametag(address=address, id=id)
-            logger.debug(f"NEW {tag.id} ({tag.address})")
+            tag = self.tags[addr] = Tag(addr=addr, id=id)
+            logger.debug(f"NEW {tag.id} ({tag.addr})")
 
-        tag.time = time.time()
-        tag.rssi = int(values.get("s", 0))
+        tag.monotime = time.monotonic()
+        tag.rssi = int(message.get("s", 0))
 
-    def _on_conn_message(self, values):
-        tag = self.tags.get(values["conn"])
-        if tag:
-            if not tag.connect_result or tag.connect_result.done():
-                loop = asyncio.get_running_loop()
-                tag.connect_result = loop.create_future()
-            tag.connect_result.set_result(True)
+    def _on_scan_stop_message(self, message):
+        if self._scanning_mono:
+            logging.debug("Scanning inactive")
+            self._scanning_mono = 0.0
 
-    def _on_conn_fail_message(self, values):
-        pass
+    def _on_scan_start_message(self, message):
+        if not self._scanning_mono:
+            logging.debug("Scanning active")
+            self._scanning_mono = time.monotonic()
 
-    def _on_disconn_message(self, values):
-        tag = self.tags.get(values["conn"])
-        if tag:
-            if not tag.connect_result or tag.connect_result.done():
-                loop = asyncio.get_running_loop()
-                tag.connect_result = loop.create_future()
-            tag.connect_result.set_result(False)
+    def _on_conn_message(self, message):
+        tag = self.tags.get(message["conn"])
+        handle = int(message["handle"])
+        if not tag:
+            logger.warning(f'Unmatched "conn": {message}')
+            return
 
-    def _on_disconn_fail_message(self, values):
-        pass
+        self._handles[handle] = tag
+        tag.handle = _set_future(handle, use=tag.handle)
+        tag.monotime = time.monotonic()
 
-    def _on_read_message(self, values):
-        pass
+    def _on_conn_fail_message(self, message):
+        for tag in self.tags.values():
+            if not tag.handle.done():
+                exc = BluefruitError(f"Connection failed: {message}")
+                tag.handle.set_exception(exc)
+                tag.monotime = time.monotonic()
 
-    def _on_read_fail_message(self, values):
-        pass
+    def _on_disconn_message(self, message):
+        tag = self._handles.pop(int(message["conn"]), None)
+        if not tag:
+            logger.warning(f'Unmatched "disconn": {message}')
+            return
 
-    def _on_time_message(self, values):
-        now = time.time()
-        self.tags, old_tags = {}, self.tags
-        for addr, tag in old_tags.items():
-            if tag.time >= now - 10:
-                self.tags[addr] = tag
-            else:
-                age = now - tag.time
-                logger.debug(f"LOST ({age:.1f}s): {tag.id} ({tag.address})")
-        pass
+        tag.monotime = time.monotonic()
+        tag.handle = _set_future(-1, use=tag.handle)
+        exc = BluefruitError(f"Disconnected: {message}")
+        for read in [r for r in tag.reads.values() if not r.done()]:
+            read.set_exception(exc)
 
-    def _on_write_message(self, values):
-        pass
+        pending_writes, tag.writes = tag.writes, []
+        for write in [w for w in pending_writes if not w.done()]:
+            write.set_exception(exc)
 
-    def _on_write_fail_message(self, values):
-        pass
+    def _on_disconn_fail_message(self, message):
+        tag = self._handles.get(int(message["conn"]))
+        if not tag:
+            logger.warning(f'Unmatched "disconn_fail": {message}')
+            return
+
+        exc = BluefruitError(f"Disconnection failed: {message}")
+        tag.handle = _set_future(exc=exc, use=tag.handle)
+        tag.monotime = time.monotonic()
+
+    def _on_read_message(self, message):
+        tag = self._handles.get(int(message["conn"]))
+        attr = int(message["attr"])
+        data = _to_binary(message["data"])
+        if not tag or attr not in tag.reads:
+            logger.warning(f'Unmatched "read": {message}')
+            return
+
+        tag.monotime = time.monotonic()
+        tag.reads[attr] = _set_future(data, use=tag.reads[attr])
+
+    def _on_read_fail_message(self, message):
+        tag = self._handles.get(int(message["conn"]))
+        attr = int(message["attr"])
+        if not tag or attr not in tag.reads:
+            logger.warning(f'Unmatched "read_fail": {message}')
+            return
+
+        tag.monotime = time.monotonic()
+        exc = BluefruitError(f"Read failed: {message}")
+        tag.reads[attr] = _set_future(exc=exc, use=tag.reads[attr])
+
+    def _on_time_message(self, message):
+        if self._scanning_mono:  # Only age things out when scanning is active.
+            mono = time.monotonic()
+            self.tags, old_tags = {}, self.tags
+            for addr, tag in old_tags.items():
+                h = tag.handle
+                age = mono - max(tag.monotime, self._scanning_mono)
+                if age < 3 or not tag.fully_disconnected:
+                    self.tags[addr] = tag
+                else:
+                    logger.debug(f"LOST ({age:.1f}s): {tag.id} ({tag.addr})")
+
+    def _on_write_message(self, message):
+        tag = self._handles.get(int(message["conn"]))
+        if not tag:
+            logger.warning(f'Unmatched "write": {message}')
+            return
+
+        tag.monotime = time.monotonic()
+        count = int(message["count"])
+        if count > len(tag.writes):
+            logger.warning(
+                f'Unmatched "write" '
+                f"(count={count} > pending={len(tag.writes)}: {message}"
+            )
+
+        done, tag.writes = tag.writes[:count], tag_writes[count:]
+        for write in done:
+            _set_future(True, use=write)
+
+    def _on_write_fail_message(self, message):
+        tag = self._handles.get(int(message["conn"]))
+        if not tag or not tag.writes:
+            logger.warning(f'Unmatched "write_fail": {message}')
+            return
+
+        exc = BluefruitError("Write failed: {message}")
+        done, tag.writes = tag.writes, []
+        for write in done:
+            _set_future(exc=exc, use=write)
 
     @staticmethod
     def _to_binary(text: str) -> bytes:
-        return urllib.parse.unquote(text, encoding='L1').encode('L1')
+        return urllib.parse.unquote(text, encoding="L1").encode("L1")
 
     @staticmethod
     def _to_text(data: bytes) -> str:
         return urllib.parse.quote(data)
+
+
+class Connection:
+    def __init__(self, *, fruit: Bluefruit, tag: Tag):
+        self.fruit = fruit
+        self.tag = tag
+
+    async def __aenter__(self):
+        if not self.tag.fully_disconnected:
+            raise ValueError("Not fully disconnected: {tag}")
+        self.tag.handle = _set_future(use=self.tag.handle)
+        self.fruit._send_serial(f"conn {self.tag.addr}")
+        self.fruit.busy_connecting += 1
+        try:
+            await self.tag.handle
+        finally:
+            self.fruit.busy_connecting -= 1
+
+    async def __aexit__(self, exc_type, exc, tb):
+        handle = await self.tag.handle
+        if handle >= 0:
+            self.tag.handle = _set_future(use=self.tag.handle)
+            self.fruit._send_serial(f"disconn {handle}")
+            await self.tag.handle
+
+
+class _InputMessage(dict):
+    def __init__(self, data):
+        text = data.decode(encoding="L1").strip()
+        values = logfmt.parser.parse_line(text)
+        super().__init__((k, v) for k, v in values.items() if k.isidentifier())
+
+    def __repr__(self):
+        return "<" + " ".join(f"{k}={v}" for k, v in self.items()) + ">"
 
 
 class _SerialPort:
@@ -179,7 +302,7 @@ class _SerialPort:
             self._serial = serial.Serial(self._port, timeout=0)
 
             loop = asyncio.get_running_loop()
-            self._from_serial = loop.create_future()
+            self._from_serial = _set_future()
             self._to_serial = bytearray()
 
             fileno = self._serial.fileno()
@@ -199,11 +322,11 @@ class _SerialPort:
                 loop.remove_writer(fileno)
                 self._serial.close()
             except serial.SerialException as e:
-                logger.warning(f"Closing serial: {str(e) or type(e).__name__}")
+                logger.error(f"Closing serial: {str(e) or type(e).__name__}")
 
     async def read(self) -> bytearray:
         data = await self._from_serial
-        self._from_serial = asyncio.get_running_loop().create_future()
+        self._from_serial = _set_future()
         return data
 
     def write(self, data: bytes):
@@ -222,22 +345,28 @@ class _SerialPort:
                 self._from_serial.set_result(bytearray(data))
         except serial.SerialException as exc:
             asyncio.get_running_loop().remove_reader(fileno)
-            if self._from_serial.done():
-                self._from_serial = asyncio.get_running_loop().create_future()
-            self._from_serial.set_exception(exc)
+            self._from_serial = _set_future(exc=exc, use=self._from_serial)
 
     def _on_serial_writable(self, fileno):
         try:
             written = self._serial.write(self._to_serial)
             self._to_serial = self._to_serial[written:]
         except serial.SerialException as exc:
-            if self._from_serial.done():
-                self._from_serial = asyncio.get_running_loop().create_future()
-            self._from_serial.set_exception(exc)
+            self._from_serial = _set_future(exc=exc, use=self._from_serial)
             self._to_serial = b""
 
         if not self._to_serial:
             asyncio.get_running_loop().remove_writer(fileno)
+
+
+def _set_future(result=None, *, exc=None, use=None):
+    if use is None or use.done():
+        use = asyncio.get_running_loop().create_future()
+    if result is not None:
+        use.set_result(result)
+    if exc is not None:
+        use.set_exception(exc)
+    return use
 
 
 if __name__ == "__main__":
@@ -246,12 +375,19 @@ if __name__ == "__main__":
     import nametag.logging_setup
 
     async def test(args):
-        async with Bluefruit(port=args.port) as bluefruit:
-            for i in range(20):
+        async with Bluefruit(port=args.port) as fruit:
+            for i in range(10):
                 await asyncio.sleep(1)
-                for t in bluefruit.tags.values():
+                print(f"=== {len(fruit.tags)} tags ===")
+                for t in list(fruit.tags.values()):
                     print(t)
-                print()
+                    if t.fully_disconnected:
+                        try:
+                            async with Connection(fruit=fruit, tag=t) as conn:
+                                print("  connected!")
+                        except BluefruitError as e:
+                            logging.error(f"{e}")
+                    print()
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", action="store_true")
