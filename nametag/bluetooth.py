@@ -106,13 +106,13 @@ class Scanner:
     def spawn_connection_task(
         self, tag: ScanTag, asyncf: Callable, *args, timeout=60, **kwargs
     ):
-        async def _connect():
+        async def connect():
             async with Connection(tag, timeout=timeout) as connection:
                 return await asyncf(connection, *args, **kwargs)
 
         if tag.id in self.tasks:
             raise ValueError(f"Another task running for {tag.id}")
-        task = asyncio.create_task(_connect())
+        task = asyncio.create_task(connect())
         self.tasks[tag.id] = task
         return task
 

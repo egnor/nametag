@@ -166,7 +166,8 @@ static void on_conn_command(char *args) {
   };
 
   const auto connect_err = sd_ble_gap_connect(
-      &addr, &conn_scan_params, &connect_params, BLE_CONN_CFG_TAG_DEFAULT);
+      &addr, &conn_scan_params, &connect_params, 1);
+  Serial.println("scan_stop");
   if (connect_err != NRF_SUCCESS) {
     Serial.print("*** conn_fail=");
     print_address(&addr);
@@ -176,7 +177,6 @@ static void on_conn_command(char *args) {
   Serial.print("conn_start=");
   print_address(&addr);
   Serial.println();
-  Serial.println("scan_stop");
 }
 
 static void on_disconn_command(char *args) {
@@ -317,6 +317,39 @@ static void bluetooth_setup() {
     Serial.printf("*** ERR=BLE_GAP_CFG_ROLE_COUNT code=0x%x\n", role_err);
   }
 
+  static const ble_cfg_t gap_conn_config {
+    .conn_cfg = {
+      .conn_cfg_tag = 1,
+      .params = {
+        .gap_conn_cfg = {
+          .conn_count = 10,
+          .event_length = BLE_GAP_EVENT_LENGTH_DEFAULT
+        }
+      }
+    }
+  };
+  const auto gap_conn_err = sd_ble_cfg_set(
+      BLE_CONN_CFG_GAP, &gap_conn_config, app_ram_base);
+  if (gap_conn_err != NRF_SUCCESS) {
+    Serial.printf("*** ERR=BLE_CONN_CFG_GAP code=0x%x\n", role_err);
+  }
+
+  static const ble_cfg_t gattc_conn_config = {
+    .conn_cfg = {
+      .conn_cfg_tag = 1,
+      .params = {
+        .gattc_conn_cfg = {
+          .write_cmd_tx_queue_size = 10
+        }
+      }
+    }
+  };
+  const auto gattc_conn_err = sd_ble_cfg_set(
+      BLE_CONN_CFG_GATTC, &gattc_conn_config, app_ram_base);
+  if (gattc_conn_err != NRF_SUCCESS) {
+    Serial.printf("*** ERR=BLE_CONN_CFG_GATTC code=0x%x\n", role_err);
+  }
+
   uint32_t app_ram_needed = app_ram_base;
   const auto enable_err = sd_ble_enable(&app_ram_needed);
   if (enable_err == NRF_ERROR_NO_MEM) {
@@ -401,6 +434,9 @@ static void bluetooth_poll() {
         break;
       case BLE_GATTC_EVT_WRITE_CMD_TX_COMPLETE:
         on_bt_write_done(&event->evt.gattc_evt);
+        break;
+      case BLE_GATTC_EVT_HVX:
+        on_bt_notify(&event->evt.gattc_evt);
         break;
       default:
         Serial.printf("ble_event=%d conn=%d\n", event->header.evt_id, handle);
@@ -503,7 +539,7 @@ static void on_bt_scan_report(const ble_gap_evt_adv_report_t *report) {
   }
 
   const auto scan_err = sd_ble_gap_scan_start(nullptr, &scan_data_info);
-  if (scan_err != NRF_SUCCESS) {
+  if (scan_err != NRF_SUCCESS && scan_err != NRF_ERROR_INVALID_STATE) {
     Serial.printf("*** ERR=sd_ble_gap_scan_start resume code=0x%x\n", scan_err);
   }
 }
@@ -564,6 +600,26 @@ static void on_bt_write_done(const ble_gattc_evt_t *e) {
   } else {
     Serial.printf(
         "*** write_fail conn=%d attr=%d status=0x%x\n",
+        e->conn_handle, e->error_handle, e->gatt_status);
+  }
+}
+
+static void on_bt_notify(const ble_gattc_evt_t *e) {
+  if (e->gatt_status == BLE_GATT_STATUS_SUCCESS) {
+    const auto *hv = &e->params.hvx;
+    if (hv->type == BLE_GATT_HVX_NOTIFICATION) {
+      Serial.print("notify");
+    } else if (hv->type == BLE_GATT_HVX_INDICATION) {
+      Serial.print("indicate");
+    } else {
+      Serial.printf("value type=%d", hv->type);
+    }
+    Serial.printf(" conn=%d attr=%d data=", e->conn_handle, hv->handle);
+    print_escaped(hv->data, hv->len);
+    Serial.println();
+  } else {
+    Serial.printf(
+        "*** notify_fail conn=%d attr=%d status=0x%x\n",
         e->conn_handle, e->error_handle, e->gatt_status);
   }
 }
