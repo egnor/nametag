@@ -1,54 +1,48 @@
 # Protocol encoding for the nametag (see bluetooth.py for hardware access)
 
 import asyncio
+import logging
 import operator
-import re
 import struct
+import time
 from functools import reduce
-from typing import Dict, Iterable, Optional, Pattern
+from typing import Iterable, Optional
 
+import attr
 import crcmod  # type: ignore
 import PIL.Image  # type: ignore
 
 from nametag.bluefruit import Bluefruit, BluefruitError, Device
+
+logger = logging.getLogger(__name__)
 
 
 class ProtocolError(BluefruitError):
     pass
 
 
-def visible_nametags(fruit: Bluefruit) -> Dict[str, "Nametag"]:
-    return {
-        id: Nametag(bluefruit=fruit, dev=dev, id=id)
-        for dev in fruit.scan.values()
-        for id in [device_nametag_id(dev)]
-        if id
-    }
-
-
-def device_nametag_id(dev: Device) -> Optional[str]:
-    if dev.mdata[6:8] == b"\xff\xff":
+def id_if_nametag(dev: Device) -> Optional[str]:
+    if 0xFFF0 in dev.uuids and dev.mdata[6:8] == b"\xff\xff":
         return dev.mdata[1::-1].hex().upper()
-    else:
-        return None
+    return None
 
 
 class Nametag:
-    def __init__(self, *, bluefruit: Bluefruit, dev: Device, id: str = None):
-        self.bluefruit = bluefruit
+    def __init__(self, *, adapter: Bluefruit, dev: Device):
+        tag_id = id_if_nametag(dev)
+        if not tag_id:
+            raise ProtocolError("Device ({dev.addr}) is not a Nametag")
+        self.adapter = adapter
         self.dev = dev
-        self.id = id or nametag_id(dev)
-        if not self.id:
-            raise ValueError("Non-nametag device: {dev}")
+        self.id = tag_id
 
     async def __aenter__(self):
-        await self.bluefruit.connect(self.dev)
-        await self.bluefruit.write(self.dev, 4, b"\x00\x01")  # CCCD notify
+        await self.adapter.connect(self.dev)
+        await self.adapter.write(self.dev, 4, b"\x00\x01")  # CCCD notify
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
-        if self.dev.fully_connected:
-            await self.bluefruit.disconnect(self.dev)
+        await self.adapter.disconnect(self.dev)
 
     async def show_glyphs(self, glyphs: Iterable[PIL.Image.Image]):
         as_bytes = []
@@ -96,38 +90,43 @@ class Nametag:
     async def set_brightness(self, brightness):
         await self.send_short_message(struct.pack(">B", brightness), tag=8)
 
+    _stash_crc = crcmod.mkCrcFun(0x1CF)  # Koopman's 0xe7
+
     async def write_stash(self, data: bytes):
         if len(data) > 18:
             raise ValueError(f"Stash data too long ({len(data)}b)")
-        packet = struct.pack("BB", 0x80 | len(data), _stash_crc(data)) + data
-        await self.send_raw_packet(packet)
+        header = struct.pack("BB", 0x80 | len(data), Nametag._stash_crc(data))
+        await self.send_raw_packet(header + data)
 
     async def read_stash(self) -> Optional[bytes]:
-        packet = await self.bluefruit.read(self.dev, 3)
+        packet = await self.adapter.read(self.dev, 3)
         if len(packet) > 2:
             size = packet[0] ^ 0x80
             data = packet[2 : 2 + size]
-            if len(data) == size and packet[1] == _stash_crc(data):
+            if len(data) == size and packet[1] == Nametag._stash_crc(data):
                 return data
 
         return None  # Invalid stash
 
     async def send_raw_packet(self, packet: bytes):
-        await self.bluefruit.write(self.dev, 3, packet)
+        await self.adapter.write(self.dev, 3, packet)
 
     async def send_short_message(self, data: bytes, *, tag: int):
-        packet = _encode(data, tag=tag)
+        packet = Nametag._encode(data, tag=tag)
         await self.send_raw_packet(packet)
 
     async def send_bulk_message(self, body: bytes, *, tag: int):
-        byte_re = b"(\2[\5\6\7]|[^\2])"  # one byte encoded with escape123()
-        for index, chunk in enumerate(_chunks(body, chunk_size=128)):
+        def chunks(data: bytes, *, size: int) -> Iterable[bytes]:
+            for s in range(0, len(data), size):
+                yield data[s : s + size]
+
+        for index, chunk in enumerate(chunks(body, size=128)):
             body = struct.pack(">xHHB", len(body), index, len(chunk)) + chunk
             body += struct.pack(">B", reduce(operator.xor, body, 0))
-            packets = list(_chunks(_encode(body, tag=tag), chunk_size=20))
+            packets = list(chunks(Nametag._encode(body, tag=tag), size=20))
 
             while True:
-                notify_future = self.bluefruit.prepare_notify(self.dev, 3)
+                notify_future = self.adapter.prepare_notify(self.dev, 3)
                 for packet in packets:
                     await self.send_raw_packet(packet)
 
@@ -136,7 +135,7 @@ class Nametag:
                 except asyncio.TimeoutError:
                     raise ProtocolError("Notify timeout")
 
-                expect = _encode(struct.pack(">xHx", index), tag=tag)
+                expect = Nametag._encode(struct.pack(">xHx", index), tag=tag)
                 assert expect[-2:] == b"\0\3"
                 if notify == expect:
                     break
@@ -148,57 +147,14 @@ class Nametag:
                 ):
                     raise ProtocolError("Bad reply {notify}, expected {expect}")
 
+    @staticmethod
+    def _encode(body: bytes, *, tag: int) -> bytes:
+        def escape123(data: bytes) -> bytes:
+            data = data.replace(b"\2", b"\2\6")
+            data = data.replace(b"\1", b"\2\5")
+            data = data.replace(b"\3", b"\2\7")
+            return data
 
-_stash_crc = crcmod.mkCrcFun(0x1CF)  # Koopman's 0xe7
-
-
-def _chunks(data: bytes, *, chunk_size: int) -> Iterable[bytes]:
-    for s in range(0, len(data), chunk_size):
-        yield data[s : s + chunk_size]
-
-
-def _encode(body: bytes, *, tag: int) -> bytes:
-    def escape123(data: bytes) -> bytes:
-        data = data.replace(b"\2", b"\2\6")
-        data = data.replace(b"\1", b"\2\5")
-        data = data.replace(b"\3", b"\2\7")
-        return data
-
-    typed = struct.pack(">B", tag) + body
-    sized_typed = struct.pack(">H", len(typed)) + typed
-    return b"\1" + escape123(sized_typed) + b"\3"
-
-
-if __name__ == "__main__":
-    import argparse
-
-    import nametag.logging_setup
-
-    async def test_task(fruit, dev):
-        async with Nametag(fruit, dev) as tag:
-            print(f"  [{tag.id}] connected, reading...")
-            stash = await tag.read_stash()
-            print(f"  [{tag.id}] stash is {stash}, writing...")
-            await tag.write_stash(b"HELLO")
-            print(f"  [{tag.id}] wrote, disconnecting...")
-
-    async def test_main(args):
-        async with Bluefruit(port=args.port) as fruit:
-            for i in range(10):
-                await asyncio.sleep(1)
-                tags = find_nametags(fruit)
-                print()
-                print(f"=== {len(tags)} devices ===")
-                for id, dev in tags.items():
-                    print(id, dev)
-                    if fruit.ready_to_connect(dev):
-                        fruit.spawn_device_task(dev, test_task)
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--port", default="/dev/ttyACM0")
-    args = parser.parse_args()
-    if args.debug:
-        nametag.logging_setup.enable_debug()
-
-    asyncio.run(test_main(args))
+        typed = struct.pack(">B", tag) + body
+        sized_typed = struct.pack(">H", len(typed)) + typed
+        return b"\1" + escape123(sized_typed) + b"\3"

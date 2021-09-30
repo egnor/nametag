@@ -141,8 +141,8 @@ async def run(args):
             try:
                 await find_and_probe_device(args)
                 break
-            except bleak.exc.BleakError as exc:
-                logging.error(f"{exc}, retrying...\n")
+            except bleak.exc.BleakError:
+                logging.error(f"Error, retrying...", exc_info=True)
 
     else:
         print(f"Starting scan ({args.time:.1f}sec)...")

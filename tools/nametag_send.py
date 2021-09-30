@@ -91,37 +91,42 @@ async def run(args):
     next_print = 0.0
     async with nametag.bluefruit.Bluefruit(port=args.port) as fruit:
         while True:
-            tags = nametag.protocol.visible_nametags(fruit)
+            devs = {
+                id: dev
+                for dev in fruit.scan.values()
+                for id in [nametag.protocol.id_if_nametag(dev)]
+                if id
+            }
 
             matched = {
-                id: tag
-                for id, tag in tags.items()
-                if args.address.lower() in (tag.dev.addr.lower(), "")
+                id: dev
+                for id, dev in devs.items()
+                if args.address.lower() in (dev.addr.lower(), "")
                 and args.id.upper() in (id.upper(), "")
             }
 
             now = time.monotonic()
             if matched or now >= next_print:
                 next_print = now + 1.0
-                if not tags:
+                if not devs:
                     print("No nametags found, scanning...")
                 else:
-                    print(f"Matched {len(matched)} of {len(tags)} tags:")
-                    for id, tag in tags.items():
+                    print(f"Matched {len(matched)} of {len(devs)} tags:")
+                    for id, dev in devs.items():
                         match = "*" if id in matched else " "
-                        print(f"{match} {tag.id} {tag.dev}")
+                        print(f"{match} {id} {dev}")
                     print()
 
             if matched:
-                id, tag = next(iter(matched.items()))
+                id, dev = next(iter(matched.items()))
                 print(f"=== Connecting to nametag {id} ===")
                 try:
-                    async with tag:
+                    async with nametag.protocol.Nametag(adapter=fruit, dev=dev):
                         await talk_to_nametag(tag, args)
                     print("Done and disconnected.")
                     break
-                except nametag.bluefruit.BluefruitError as e:
-                    print(f"*** {e}")
+                except nametag.bluefruit.BluefruitError:
+                    logger.error("*** Error", exc_info=True)
                 print()
 
             await asyncio.sleep(0.1)

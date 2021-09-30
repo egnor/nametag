@@ -26,7 +26,7 @@ def try_ghost(
             f"{' *****' if content.status_title == 'success' else ''}"
         )
 
-        lobby_game.render_game.steps_for_content(content)
+        lobby_game.render_game.make_frames(content)
         try_ghost(1, config, content.new_state, depth + 1)
         try_ghost(2, config, content.new_state, depth + 1)
         try_ghost(3, config, content.new_state, depth + 1)

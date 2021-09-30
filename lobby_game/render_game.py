@@ -36,9 +36,7 @@ def get_image(path: Path) -> PIL.Image.Image:
     return image
 
 
-def image_of_text(
-    frame_path: Path, font_dir: Path, text: str
-) -> PIL.Image.Image:
+def make_image(frame_path: Path, font_dir: Path, text: str) -> PIL.Image.Image:
     frame = get_image(frame_path)
     glyphs = [get_image(font_dir / (ch + ".ase")) for ch in text]
     spacing = list(1 + KERNING.get(ab, 0) for ab in zip(text[:-1], text[1:]))
@@ -69,15 +67,15 @@ def image_of_text(
     return pasted
 
 
-def steps_for_content(
+def make_frames(
     content: lobby_game.game_logic.DisplayContent,
-) -> List[nametag.protocol.ProtocolStep]:
+) -> List[PIL.Image.Image]:
     frames: List[PIL.Image.Image] = []
     blank_image = PIL.Image.new("1", (48, 12))
 
     if content.ghost_id and content.ghost_action:
         frame_name = f"ghost-{content.ghost_id}-{content.ghost_action}.ase"
-        ghost_image = image_of_text(
+        ghost_image = make_image(
             frame_path=lobby_dir / frame_name,
             font_dir=art_dir / "font",
             text=content.ghost_text,
@@ -89,7 +87,7 @@ def steps_for_content(
         frames.append(blank_image)
 
     title_blank_image, status_text_image = [
-        image_of_text(
+        make_image(
             frame_path=lobby_dir / f"title-{content.status_title}.ase",
             font_dir=art_dir / "font-bold",
             text=word,
@@ -107,13 +105,19 @@ def steps_for_content(
     frames.append(status_text_image)
     frames.append(status_text_image)
     frames.append(blank_image)
+    return frames
 
-    steps: List[nametag.protocol.ProtocolStep] = []
-    steps.extend(nametag.protocol.set_brightness(255))
-    steps.extend(nametag.protocol.show_frames(frames, msec=500))
+
+async def render(
+    *,
+    content: lobby_game.game_logic.DisplayContent,
+    tag: nametag.protocol.Nametag,
+):
+    frames = make_frames(content)
+    await tag.set_brightness(255)
+    await tag.show_frames(frames, msec=500)
     if content.new_state:
-        steps.extend(lobby_game.tag_data.steps_from_tagstate(content.new_state))
-    return steps
+        await lobby_game.tag_data.write_state(tag=tag, state=content.new_state)
 
 
 if __name__ == "__main__":  # For testing
@@ -128,24 +132,24 @@ if __name__ == "__main__":  # For testing
     ig.add_argument("--font", type=Path, default=art_dir / "font-bold")
     ig.add_argument("--save_image", type=Path)
 
-    cg = parser.add_argument_group("Write tagsetup")
-    cg.add_argument("--ghost_id", type=int, default=0)
-    cg.add_argument("--ghost_action", default="")
-    cg.add_argument("--ghost_text", default="")
-    cg.add_argument("--status_title", default="start")
-    cg.add_argument("--status_text", default="HELLO")
-    cg.add_argument("--save_tagsetup", type=Path)
+    cg = parser.add_argument_group("Write animation")
+    cg.add_argument("--ghost_id", type=int, default=1)
+    cg.add_argument("--ghost_action", default="say")
+    cg.add_argument("--ghost_text", default='"HELLO"')
+    cg.add_argument("--status_title", default="next")
+    cg.add_argument("--status_text", default='"WORLD"')
+    cg.add_argument("--save_animation", type=Path)
 
     args = parser.parse_args()
 
-    if not (args.save_image or args.save_tagsetup):
-        parser.error("One of --save_image or --save_tagsetup required")
+    if not (args.save_image or args.save_animation):
+        parser.error("One of --save_image or --save_animation required")
 
     if args.save_image:
-        image = image_of_text(args.frame, args.font, args.text)
+        image = make_image(args.frame, args.font, args.text)
         image.save(args.save_image)
 
-    if args.save_tagsetup:
+    if args.save_animation:
         content = lobby_game.game_logic.DisplayContent(
             ghost_id=args.ghost_id,
             ghost_action=args.ghost_action,
@@ -155,6 +159,11 @@ if __name__ == "__main__":  # For testing
             new_state=lobby_game.tag_data.TagState(phase=b"GAM"),
         )
 
-        steps = steps_for_content(content)
-        with open(args.save_tagsetup, "w") as tagsetup:
-            tagsetup.write(nametag.protocol.to_str(steps))
+        frames = [f.convert("P") for f in make_frames(content)]
+        frames[0].save(
+            args.save_animation,
+            save_all=True,
+            append_images=frames[1:],
+            loop=0,
+            duration=500,
+        )

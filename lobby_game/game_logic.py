@@ -189,5 +189,5 @@ if __name__ == "__main__":
             f'title={content.status_title} word="{content.status_text}"'
         )
 
-        steps = lobby_game.render_game.steps_for_content(content)
-        print(f"=> {len(steps)} steps")
+        frames = lobby_game.render_game.make_frames(content)
+        print(f"=> {len(frames)} frames")

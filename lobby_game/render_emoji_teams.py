@@ -46,7 +46,7 @@ loaded_digits = {
 }
 
 
-async def render_team(*, team: int, tag: nametag.protocol.Nametag):
+async def render(*, team: int, tag: nametag.protocol.Nametag):
     glyphs: List[PIL.Image.Image] = []
 
     glyphs = (
@@ -61,4 +61,4 @@ async def render_team(*, team: int, tag: nametag.protocol.Nametag):
     await tag.set_speed(192)
     await tag.set_mode(2)
     await tag.show_glyphs(glyphs)
-    await lobby_game.tag_data.write_tagstate(tag=tag, state=state)
+    await lobby_game.tag_data.write_state(tag=tag, state=state)

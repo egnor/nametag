@@ -39,7 +39,7 @@ class TagConfig:
 _state_struct = struct.Struct("<4ph")
 
 
-async def read_tagstate(tag: nametag.protocol.Nametag) -> Optional[TagState]:
+async def read_state(tag: nametag.protocol.Nametag) -> Optional[TagState]:
     stash = await tag.read_stash()
     if stash and len(stash) >= _state_struct.size:
         fixed, tail = stash[: _state_struct.size], stash[_state_struct.size :]
@@ -48,13 +48,13 @@ async def read_tagstate(tag: nametag.protocol.Nametag) -> Optional[TagState]:
     return None  # No/invalid stashed data.
 
 
-async def write_tagstate(*, tag: nametag.protocol.Nametag, state: TagState):
+async def write_state(*, tag: nametag.protocol.Nametag, state: TagState):
     await tag.write_stash(
         _state_struct.pack(state.phase, state.number) + state.string
     )
 
 
-def load_tagconfigs(filename: Optional[str] = None) -> Dict[str, TagConfig]:
+def load_configs(filename: Optional[str] = None) -> Dict[str, TagConfig]:
     toml_converter = cattr.preconf.tomlkit.make_converter()
     toml_data = toml.load(filename or (Path(__file__).parent / "nametags.toml"))
     return {

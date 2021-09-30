@@ -11,7 +11,7 @@ import attr
 import logfmt.parser  # type: ignore
 import serial  # type: ignore
 
-logger = logging.getLogger("bluefruit")
+logger = logging.getLogger(__name__)
 
 
 class BluefruitError(Exception):
@@ -21,16 +21,16 @@ class BluefruitError(Exception):
 @attr.define
 class Device:
     addr: str
-    mdata: bytes = b""
     monotime: float = attr.ib(default=0.0, repr=lambda t: f"{t:.3f}")
     rssi: int = 0
+    uuids: Set[int] = attr.ib(factory=set)
+    mdata: bytes = b""
 
     _handle_factory = lambda: _set_future(-1)
     handle: asyncio.Future[int] = attr.ib(factory=_handle_factory, repr=False)
     writes: List[asyncio.Future] = attr.ib(factory=list, repr=False)
     reads: Dict[int, asyncio.Future[bytes]] = attr.ib(factory=dict, repr=False)
     notify: Dict[int, asyncio.Future[bytes]] = attr.ib(factory=dict, repr=False)
-    task: Optional[asyncio.Task] = attr.ib(default=None, repr=False)
 
     @property
     def fully_connected(self):
@@ -51,7 +51,7 @@ class Bluefruit:
         self._serial: _SerialPort = _SerialPort(port=port)
         self._reader: asyncio.Task = None
         self._exception: Exception = None
-        self._scanning_mono: float = 0.0
+        self._scanning_monot: float = 0.0
 
     async def __aenter__(self):
         self._serial.__enter__()
@@ -61,7 +61,7 @@ class Bluefruit:
 
     async def __aexit__(self, exc_type, exc, tb):
         self._reader.cancel()
-        self._serial.__exit__(None, None, None)
+        self._serial.__exit__(exc_type, exc, tb)
         try:
             await self._reader
         except asyncio.CancelledError:
@@ -71,12 +71,8 @@ class Bluefruit:
         for dev in self.scan.values():
             self._set_poison(dev, BluefruitError(f"Stopped"))
 
-        tasks = [dev.task for dev in self.scan.values() if dev.task]
-        [t.cancel() for t in tasks]
-        asyncio.gather(*tasks, return_exceptions=True)
-
     def ready_to_connect(self, dev: Device) -> bool:
-        return dev.fully_disconnected and not (dev.task or self.busy_connecting)
+        return dev.fully_disconnected and not self.busy_connecting
 
     async def connect(self, dev: Device):
         if not dev.fully_disconnected:
@@ -93,11 +89,7 @@ class Bluefruit:
             self.busy_connecting.remove(dev.addr)
 
     async def disconnect(self, dev: Device):
-        while dev.writes:
-            try:
-                await dev.writes[-1]
-            except BluefruitError:
-                pass
+        await asyncio.gather(*dev.writes, return_exceptions=True)  # Flush.
 
         try:
             handle = await dev.handle
@@ -108,31 +100,6 @@ class Bluefruit:
             dev.handle = _set_future(use=dev.handle)
             self._send_serial(f"disconn {handle}")
             await dev.handle
-
-    def spawn_device_task(self, dev: Device, asyncf: Callable, *args, **kwargs):
-        async def device_task():
-            try:
-                self.busy_connecting.remove(dev.addr)  # Handoff to connect().
-                await asyncf(self, dev, *args, **kwargs)
-
-            except BluefruitError as e:
-                logger.error(f"[{dev.addr}] Connection task: {e}")
-
-        def task_done(task):
-            logger.debug(f"[{dev.addr}] Connection task done")
-            self.busy_connecting.discard(dev.addr)
-            assert dev.task is task
-            dev.task = None
-
-        if dev.task:
-            raise BluefruitError(f"Starting duplicate task ({dev.addr})")
-        if self.busy_connecting:
-            b = ", ".join(self.busy_connecting)
-            raise BluefruitError(f"Starting task ({dev.addr}) while busy ({b})")
-
-        dev.task = asyncio.create_task(device_task())
-        self.busy_connecting.add(dev.addr)
-        dev.task.add_done_callback(task_done)
 
     async def write(self, dev: Device, attr: int, data: bytes):
         data_text = _to_text(data)
@@ -173,7 +140,7 @@ class Bluefruit:
                     line_count += 1
         except Exception as exc:
             self._exception = exc
-            logger.critical(f"Reader failed ({type(exc).__name__}): {exc}")
+            logger.critical(f"Reader failed", exc_info=True)
             raise
 
     def _set_poison(self, dev: Device, exc: Exception):
@@ -290,7 +257,6 @@ class Bluefruit:
 
     def _on_scan_message(self, message):
         self._on_scan_start_message(message)  # For startup or backstop
-        uuids = set(int(u, 16) for u in message.get("u", "").split(",") if u)
 
         addr = message["scan"]
         dev = self.scan.get(addr)
@@ -300,26 +266,27 @@ class Bluefruit:
 
         dev.monotime = time.monotonic()
         dev.rssi = int(message.get("s", 0))
+        dev.uuids = {int(u, 16) for u in message.get("u", "").split(",") if u}
         dev.mdata = _to_binary(message.get("m", ""))
 
     def _on_scan_stop_message(self, message):
-        if self._scanning_mono:
+        if self._scanning_monot:
             logger.debug("Scanning inactive")
-            self._scanning_mono = 0.0
+            self._scanning_monot = 0.0
 
     def _on_scan_start_message(self, message):
-        if not self._scanning_mono:
+        if not self._scanning_monot:
             logger.debug("Scanning active")
-            self._scanning_mono = time.monotonic()
+            self._scanning_monot = time.monotonic()
 
     def _on_time_message(self, message):
-        if self._scanning_mono:  # Only age things out when scanning is active.
+        if self._scanning_monot:  # Only age things out when scanning is active.
             mono = time.monotonic()
             self.scan, old_scan = {}, self.scan
             for addr, dev in old_scan.items():
                 h = dev.handle
-                age = mono - max(dev.monotime, self._scanning_mono)
-                if age < 3.0 or not dev.fully_disconnected or dev.task:
+                age = mono - max(dev.monotime, self._scanning_monot)
+                if age < 3.0 or not dev.fully_disconnected:
                     self.scan[addr] = dev
                 else:
                     logger.debug(f"[{dev.addr}] LOST ({age:.1f}s)")
@@ -395,8 +362,8 @@ class _SerialPort:
                 loop.remove_reader(self._fileno)
                 loop.remove_writer(self._fileno)
                 self._serial.close()
-            except serial.SerialException as e:
-                logger.error(f"Closing serial: {str(e) or type(e).__name__}")
+            except serial.SerialException:
+                logger.error(f"Serial close failed", exc_info=True)
 
     async def read(self) -> bytearray:
         data = await self._from_serial

@@ -35,9 +35,8 @@ def _exception_hook(exc_type, exc_value, exc_tb):
         print("*** KeyboardInterrupt (^C)! ***", file=sys.stderr)
         return
 
-    logging.critical(
-        "Uncaught exception", exc_info=(exc_type, exc_value, exc_tb)
-    )
+    exc_info = (exc_type, exc_value, exc_tb)
+    logging.critical("Uncaught exception", exc_info=exc_info)
 
 
 def enable_debug():
