@@ -17,11 +17,16 @@ class ProtocolError(BluefruitError):
     pass
 
 
-def find_nametags(fruit: Bluefruit) -> Dict[str, Device]:
-    return {id: d for d in fruit.scan.values() for id in [nametag_id(d)] if id}
+def visible_nametags(fruit: Bluefruit) -> Dict[str, "Nametag"]:
+    return {
+        id: Nametag(bluefruit=fruit, dev=dev, id=id)
+        for dev in fruit.scan.values()
+        for id in [device_nametag_id(dev)]
+        if id
+    }
 
 
-def nametag_id(dev: Device) -> Optional[str]:
+def device_nametag_id(dev: Device) -> Optional[str]:
     if dev.mdata[6:8] == b"\xff\xff":
         return dev.mdata[1::-1].hex().upper()
     else:
@@ -29,10 +34,12 @@ def nametag_id(dev: Device) -> Optional[str]:
 
 
 class Nametag:
-    def __init__(self, bluefruit: Bluefruit, dev: Device):
+    def __init__(self, *, bluefruit: Bluefruit, dev: Device, id: str = None):
         self.bluefruit = bluefruit
         self.dev = dev
-        self.id = nametag_id(dev)
+        self.id = id or nametag_id(dev)
+        if not self.id:
+            raise ValueError("Non-nametag device: {dev}")
 
     async def __aenter__(self):
         await self.bluefruit.connect(self.dev)

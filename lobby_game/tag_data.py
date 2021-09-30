@@ -39,8 +39,8 @@ class TagConfig:
 _state_struct = struct.Struct("<4ph")
 
 
-def tagstate_from_readback(data: bytes) -> Optional[TagState]:
-    stash = nametag.protocol.unstash_readback(data)
+async def read_tagstate(tag: nametag.protocol.Nametag) -> Optional[TagState]:
+    stash = await tag.read_stash()
     if stash and len(stash) >= _state_struct.size:
         fixed, tail = stash[: _state_struct.size], stash[_state_struct.size :]
         phase, number = _state_struct.unpack(fixed)
@@ -48,9 +48,10 @@ def tagstate_from_readback(data: bytes) -> Optional[TagState]:
     return None  # No/invalid stashed data.
 
 
-def steps_from_tagstate(s: TagState) -> Iterable[nametag.protocol.ProtocolStep]:
-    stash = _state_struct.pack(s.phase, s.number) + s.string
-    return nametag.protocol.stash_data(stash)
+async def write_tagstate(*, tag: nametag.protocol.Nametag, state: TagState):
+    await tag.write_stash(
+        _state_struct.pack(state.phase, state.number) + state.string
+    )
 
 
 def load_tagconfigs(filename: Optional[str] = None) -> Dict[str, TagConfig]:

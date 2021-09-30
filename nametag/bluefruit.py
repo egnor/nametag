@@ -236,7 +236,6 @@ class Bluefruit:
             if not dev.handle.done():
                 exc = BluefruitError(f"Connection failed: {message}")
                 dev.handle.set_exception(exc)
-                dev.monotime = time.monotonic()
 
     def _on_disconn_message(self, message):
         dev = self._handles.pop(int(message["conn"]), None)
@@ -256,7 +255,6 @@ class Bluefruit:
 
         exc = BluefruitError(f"Disconnection failed: {message}")
         dev.handle = _set_future(exc=exc, use=dev.handle)
-        dev.monotime = time.monotonic()
 
     def _on_notify_message(self, message):
         dev = self._handles.get(int(message["conn"]))
@@ -287,7 +285,6 @@ class Bluefruit:
             logger.warning(f'Unmatched "read_fail": {message}')
             return
 
-        dev.monotime = time.monotonic()
         exc = BluefruitError(f"[{dev.id}] Read failed: {message}")
         dev.reads[attr] = _set_future(exc=exc, use=dev.reads[attr])
 

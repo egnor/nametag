@@ -46,7 +46,7 @@ loaded_digits = {
 }
 
 
-def steps_for_team(team: int) -> List[nametag.protocol.ProtocolStep]:
+async def render_team(*, team: int, tag: nametag.protocol.Nametag):
     glyphs: List[PIL.Image.Image] = []
 
     glyphs = (
@@ -57,10 +57,8 @@ def steps_for_team(team: int) -> List[nametag.protocol.ProtocolStep]:
 
     state = lobby_game.tag_data.TagState(b"EMO", number=team)
 
-    steps: List[nametag.protocol.ProtocolStep] = []
-    steps.extend(nametag.protocol.set_brightness(255))
-    steps.extend(nametag.protocol.set_speed(192))
-    steps.extend(nametag.protocol.set_mode(2))
-    steps.extend(nametag.protocol.show_glyphs(glyphs))
-    steps.extend(lobby_game.tag_data.steps_from_tagstate(state))
-    return steps
+    await tag.set_brightness(255)
+    await tag.set_speed(192)
+    await tag.set_mode(2)
+    await tag.show_glyphs(glyphs)
+    await lobby_game.tag_data.write_tagstate(tag=tag, state=state)

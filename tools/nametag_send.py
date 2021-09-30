@@ -91,12 +91,12 @@ async def run(args):
     next_print = 0.0
     async with nametag.bluefruit.Bluefruit(port=args.port) as fruit:
         while True:
-            tags = nametag.protocol.find_nametags(fruit)
+            tags = nametag.protocol.visible_nametags(fruit)
 
             matched = {
-                id: dev
-                for id, dev in tags.items()
-                if args.address.lower() in (dev.addr.lower(), "")
+                id: tag
+                for id, tag in tags.items()
+                if args.address.lower() in (tag.dev.addr.lower(), "")
                 and args.id.upper() in (id.upper(), "")
             }
 
@@ -107,16 +107,16 @@ async def run(args):
                     print("No nametags found, scanning...")
                 else:
                     print(f"Matched {len(matched)} of {len(tags)} tags:")
-                    for id, dev in tags.items():
+                    for id, tag in tags.items():
                         match = "*" if id in matched else " "
-                        print(f"{match} {id} {dev}")
+                        print(f"{match} {tag.id} {tag.dev}")
                     print()
 
             if matched:
-                id, dev = next(iter(matched.items()))
+                id, tag = next(iter(matched.items()))
                 print(f"=== Connecting to nametag {id} ===")
                 try:
-                    async with nametag.protocol.Nametag(fruit, dev) as tag:
+                    async with tag:
                         await talk_to_nametag(tag, args)
                     print("Done and disconnected.")
                     break
