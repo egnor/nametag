@@ -10,7 +10,7 @@ from typing import List, Tuple
 
 import PIL.Image  # type: ignore
 
-# import nametag.aseprite_loader
+import nametag.aseprite_loader
 import nametag.bluefruit
 import nametag.logging_setup
 import nametag.protocol

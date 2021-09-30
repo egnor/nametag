@@ -74,5 +74,7 @@ def open_factory(fp: Optional[IO], filename: Optional[str]):
             return image_from_ase(fp.read())
 
 
+PIL.Image.init()  # Otherwise we *only* get the .ase loader.
 PIL.Image.register_open("ASE", open_factory)
+PIL.Image.register_mime("ASE", "image/x-aseprite")
 PIL.Image.register_extension("ASE", ".ase")
