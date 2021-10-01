@@ -38,27 +38,26 @@ async def scan_and_spawn(
         tag = nametag.protocol.Nametag(adapter=adapter, dev=dev)
 
         async def tag_task():
-            try:
-                logger.debug(f"[{tag.id}] Connecting...")
-                adapter.busy_connecting.remove(tag.dev.addr)  # Handoff
-                async with tag:
-                    logger.debug(f"[{tag.id}] Connected, running task...")
-                    await runner(tag, *args, **kwargs)
-                    logger.debug(f"[{tag.id}] Task complete, disconnecting...")
-                id_success_mono[tag.id] = time.monotonic()
-                logger.debug(f"[{tag.id}] Done and disconnected")
-            except asyncio.CancelledError:
-                logger.debug(f"[{tag.id}] Task cancelled")
-                raise
-            except nametag.bluefruit.BluefruitError as exc:
-                logger.error(f"[{tag.id}] {exc}")  # Common; skip stack trace
-            except Exception:
-                logger.error(f"[{tag.id}] Task failed", exc_info=True)
-                raise
+            logger.debug(f"[{tag.id}] Connecting...")
+            adapter.busy_connecting.remove(tag.dev.addr)  # Handoff
+            async with tag:
+                logger.debug(f"[{tag.id}] Connected, running tag task...")
+                await runner(tag, *args, **kwargs)
+                logger.debug(f"[{tag.id}] Tag task complete, disconnecting...")
+            id_success_mono[tag.id] = time.monotonic()
+            logger.debug(f"[{tag.id}] Done and disconnected")
 
         def task_done(task):
             adapter.busy_connecting.discard(tag.dev.addr)
             assert id_task.pop(tag.id) is task
+            try:
+                task.result()
+            except asyncio.CancelledError:
+                logger.debug(f"[{tag.id}] Tag task cancelled")
+            except nametag.bluefruit.BluefruitError as exc:
+                logger.warning(f"[{tag.id}] {exc}")  # Common; skip stack trace
+            except Exception:
+                logger.error(f"[{tag.id}] Tag task failed", exc_info=True)
 
         assert tag.id not in id_task
         assert not adapter.busy_connecting

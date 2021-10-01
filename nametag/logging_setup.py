@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import signal
@@ -31,13 +32,21 @@ class _LogFormatter(logging.Formatter):
         return pre + out.strip() + post
 
 
-def _exception_hook(exc_type, exc_value, exc_tb):
+def _sys_exception_hook(exc_type, exc_value, exc_tb):
     if issubclass(exc_type, KeyboardInterrupt):
-        print("*** KeyboardInterrupt (^C)! ***", file=sys.stderr)
-        return
+        logging.critical("*** KeyboardInterrupt (^C)! ***")
+    else:
+        exc_info = (exc_type, exc_value, exc_tb)
+        logging.critical("Uncaught exception", exc_info=exc_info)
 
-    exc_info = (exc_type, exc_value, exc_tb)
-    logging.critical("Uncaught exception", exc_info=exc_info)
+
+def _asyncio_exception_hook(loop, context):
+    exc = context.get("exception")
+    if isinstance(exc, KeyboardInterrupt):
+        logging.critical("*** KeyboardInterrupt (^C)! ***")
+    else:
+        exc_info = (type(exc), exc, None) if exc else (None, None, None)
+        logging.critical(context["message"], exc_info=exc_info)
 
 
 def enable_debug():
@@ -50,4 +59,5 @@ def enable_debug():
 _log_handler = logging.StreamHandler(stream=sys.stderr)
 _log_handler.setFormatter(_LogFormatter())
 logging.basicConfig(level=logging.INFO, handlers=[_log_handler])
-sys.excepthook = _exception_hook
+sys.excepthook = _sys_exception_hook
+asyncio.get_event_loop().set_exception_handler(_asyncio_exception_hook)
