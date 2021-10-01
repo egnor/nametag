@@ -6,5 +6,5 @@ __pycache__/
 .ardi/
 build/
 
-/*.png
-/*.gif
+tmp.*
+tmp/
