@@ -2,13 +2,10 @@
 #include <stdio.h>
 
 #include <Arduino.h>
-#include <Adafruit_NeoPixel.h>
 #include <Adafruit_TinyUSB.h>
 
 #include <ble.h>
 #include <nrfx_power.h>
-
-// Adafruit_NeoPixel pixels(10, 8, NEO_GRB + NEO_KHZ800);
 
 static void input_poll();
 static void on_input_line(char *);
