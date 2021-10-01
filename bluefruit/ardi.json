@@ -5,9 +5,7 @@
 	"boardUrls": [
 		"https://www.adafruit.com/package_adafruit_index.json"
 	],
-	"libraries": {
-		"Adafruit NeoPixel": "1.8.7"
-	},
+	"libraries": {},
 	"builds": {
 		"bluefruit": {
 			"directory": ".",

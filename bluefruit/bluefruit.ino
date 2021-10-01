@@ -37,7 +37,8 @@ static const ble_data_t scan_data_info = {scan_data, sizeof(scan_data)};
 static bool show_scan = true;
 
 char input_line[256];
-int input_size = 0;
+int line_size = 0;
+int rx_ack_size = 0;
 static uint32_t next_status_millis = 0;
 
 void setup() {
@@ -61,31 +62,39 @@ void loop() {
 }
 
 static void input_poll() {
-  while (Serial.available()) {
-    const char ch = Serial.read(); 
-    if (ch == '\r' or ch == '\n') {
-      input_line[input_size] = '\0';
-      on_input_line(input_line);
-      input_size = 0;
-    } else if (ch < 32 || ch >= 128) {
-      Serial.printf("*** ERR=input ascii=%d\n", ch);
-    } else if (input_size >= sizeof(input_line) - 1) {
-      Serial.printf("*** ERR=input line_length=%d\n", input_size);
-      input_size = 0;
-    } else {
-      input_line[input_size++] = ch;
-    }
-  }
-
   while (!Serial) {
     digitalWrite(LED_BUILTIN, (millis() % 500) < 450);
     for (int h = 0; h < 20; ++h) {
       sd_ble_gap_disconnect(h, BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
     }
+    line_size = 0;
+    rx_ack_size = 0;
     delay(10);
   }
 
   digitalWrite(LED_BUILTIN, (millis() % 1000) < 500);
+
+  while (Serial.available()) {
+    const char ch = Serial.read(); 
+    ++rx_ack_size;
+    if (ch == '\r' or ch == '\n') {
+      input_line[line_size] = '\0';
+      on_input_line(input_line);
+      line_size = 0;
+    } else if (ch < 32 || ch >= 128) {
+      Serial.printf("*** ERR=input ascii=%d\n", ch);
+    } else if (line_size >= sizeof(input_line) - 1) {
+      Serial.printf("*** ERR=input line_length=%d\n", line_size);
+      line_size = 0;
+    } else {
+      input_line[line_size++] = ch;
+    }
+  }
+
+  if (rx_ack_size >= 64) {
+    Serial.printf("rx=%d\n", rx_ack_size);
+    rx_ack_size = 0;
+  }
 }
 
 static void on_input_line(char *line) {
