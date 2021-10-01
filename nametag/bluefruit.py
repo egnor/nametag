@@ -19,6 +19,11 @@ class BluefruitError(Exception):
     pass
 
 
+MAX_SEND_SPACE = 64
+MAX_WRITES = 10
+MAX_SCAN_AGE = 60.0
+
+
 @attr.define
 class Device:
     addr: str
@@ -45,10 +50,6 @@ class Device:
 
 
 class Bluefruit:
-    MAX_SEND_SPACE = 200
-    MAX_WRITES = 10
-    MAX_SCAN_AGE = 60.0
-
     def __init__(self, *, port):
         self.scan: Dict[str, Device] = {}
         self.busy_connecting: Set[str] = set()
@@ -57,12 +58,13 @@ class Bluefruit:
         self._serial: _SerialPort = _SerialPort(port=port)
         self._reader: asyncio.Task = None
         self._send_space: asyncio.Future = _set_future(MAX_SEND_SPACE)
+        self._command_ack: asyncio.Future = _set_future()
 
     async def __aenter__(self):
         logger.debug("Starting serial reader task...")
         self._serial.__enter__()
         self._reader = asyncio.create_task(self._reader_task())
-        await self._send_serial("show")  // Just in case.
+        await self._send_command("show")  # Just in case.
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
@@ -76,8 +78,7 @@ class Bluefruit:
         except BluefruitError as exc:
             raise BluefruitError("Reader task failed") from exc
         finally:
-            for dev in self.scan.values():
-                self._poison_device(dev, BluefruitError(f"Stopped"))
+            self._poison_all(BluefruitError("Stopped"))
 
     @property
     def totals(self):
@@ -100,7 +101,7 @@ class Bluefruit:
             raise BluefruitError(f"Connect ({dev.addr}) while busy ({b})")
         dev.handle = _set_future(use=dev.handle)
         self.busy_connecting.add(dev.addr)
-        await self._send_serial(f"conn {dev.addr}")
+        await self._send_command(f"conn {dev.addr}")
         try:
             await dev.handle
         finally:
@@ -117,7 +118,7 @@ class Bluefruit:
 
         if handle >= 0:
             dev.handle = _set_future(use=dev.handle)
-            await self._send_serial(f"disconn {handle}")
+            await self._send_command(f"disconn {handle}")
             await dev.handle
 
     async def write(self, dev: Device, attr: int, data: bytes):
@@ -128,7 +129,7 @@ class Bluefruit:
         if not dev.fully_connected:
             raise BluefruitError("Write to non-connected device")
         dev.writes.append(_set_future())
-        await self._send_serial(f"write {dev.handle.result()} {attr} {text}")
+        await self._send_command(f"write {dev.handle.result()} {attr} {text}")
 
     async def read(self, dev: Device, attr: int) -> bytes:
         self.check_running()
@@ -137,7 +138,7 @@ class Bluefruit:
         if not dev.fully_connected:
             raise BluefruitError("Read from non-connected device")
         dev.reads[attr] = _set_future(use=dev.reads.get(attr))
-        await self._send_serial(f"read {dev.handle.result()} {attr}")
+        await self._send_command(f"read {dev.handle.result()} {attr}")
         return await dev.reads[attr]
 
     def prepare_notify(self, dev: Device, attr: int) -> asyncio.Future:
@@ -147,22 +148,19 @@ class Bluefruit:
         future = dev.notify[attr] = _set_future(use=dev.notify.get(attr))
         return future
 
-    def send_echo(self, data: bytes):
+    async def send_dummy(self, data: bytes, *, echo: bool = False):
         self.check_running()
-        await self._send_serial(f"echo {_to_text(data)}")
+        command = "echo" if echo else "noop"
+        await self._send_command(f"{command} {_to_text(data)}")
 
     async def _reader_task(self):
-        await self._serial.read()  # start fresh after buffered data
-        line_count = 0
         buffer = bytearray()
         while True:
             buffer.extend(await self._serial.read())
             lines = buffer.split(b"\n")
             buffer = lines.pop()
             for line in lines:
-                if line_count > 0:
-                    self._on_serial_line(line)
-                line_count += 1
+                self._on_serial_line(line)
 
     def _poison_device(self, dev: Device, exc: Exception):
         if dev.handle and not dev.handle.done():
@@ -182,14 +180,22 @@ class Bluefruit:
             notify.set_exception(exc)
             notify.exception()  # Avoid warning if not accessed
 
-    async def _send_serial(self, line: str):
+    def _poison_all(self, exc: Exception):
+        self._send_space = _set_future(exc=exc, use=self._send_space)
+        self._send_space.exception()
+        for dev in self.scan.values():
+            self._poison_device(dev, exc)
+
+    async def _send_command(self, line: str):
         logger.debug(f"=> {line.strip()}")
         data = (line + "\n").encode(encoding="L1")
+        self._command_ack = _set_future(use=self._command_ack)
         while data:
             space = await self._send_space
             send, data = data[:space], data[space:]
             self._serial.write(send)
             self._send_space = _set_future((space - len(send)) or None)
+        await self._command_ack
 
     def _on_serial_line(self, line: bytes):
         message = _InputMessage(line)
@@ -203,6 +209,9 @@ class Bluefruit:
 
     def _on_ERR_message(self, message):
         logger.error(f"Bluefruit error: {message}")
+
+    def _on_ack_message(self, message):
+        self._command_ack = _set_future(message["ack"], use=self._command_ack)
 
     def _on_conn_message(self, message):
         dev = self.scan.get(message["conn"])

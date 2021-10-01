@@ -14,7 +14,7 @@ async def run(args):
         start_mono = time.monotonic()
         next_status = 0.0
         while True:
-            adapter.send_echo(b"01234567" * 16)
+            await adapter.send_dummy(b"x" * args.packet)
             elapsed = time.monotonic() - start_mono
             r_bytes = adapter.totals["read"]
             w_bytes = adapter.totals["write"]
@@ -33,6 +33,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--port", default="/dev/ttyACM0")
 parser.add_argument("--debug", action="store_true")
 parser.add_argument("--bps", type=float, default=1024)
+parser.add_argument("--packet", type=int, default=128)
 
 args = parser.parse_args()
 if args.debug:

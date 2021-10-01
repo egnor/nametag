@@ -99,29 +99,30 @@ static void input_poll() {
 
 static void on_input_line(char *line) {
   const char *command = split_word(&line);
-  if (!strcmp(command, "echo")) {
-    const int size = decode_escaped(line);
-    Serial.print("echo=");
-    print_escaped(line, size);
-    Serial.println();
+  if (!strcmp(command, "write")) {
+    on_write_command(line);
+  } else if (!strcmp(command, "read")) {
+    on_read_command(line);
   } else if (!strcmp(command, "conn")) {
     on_conn_command(line);
   } else if (!strcmp(command, "disconn")) {
     on_disconn_command(line);
-  } else if (!strcmp(command, "read")) {
-    on_read_command(line);
-  } else if (!strcmp(command, "write")) {
-    on_write_command(line);
   } else if (!strcmp(command, "hide")) {
     show_scan = false;
     Serial.println("show=false");
   } else if (!strcmp(command, "show")) {
     show_scan = true;
     Serial.println("show=true");
-  } else if (*command) {
+  } else if (!strcmp(command, "echo")) {
+    const int size = decode_escaped(line);
+    Serial.print("echo=");
+    print_escaped(line, size);
+    Serial.println();
+  } else if (strcmp(command, "noop") && strcmp(command, "")) {
     Serial.printf("*** ERR=input command=\"%s\"", command);
     Serial.println();
   }
+  Serial.printf("ack=%s\n", command);
 }
 
 static void on_conn_command(char *args) {
