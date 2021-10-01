@@ -16,15 +16,16 @@ async def run(args):
         while True:
             await adapter.send_dummy(b"x" * args.packet)
             elapsed = time.monotonic() - start_mono
-            r_bytes = adapter.totals["read"]
-            w_bytes = adapter.totals["write"]
-            await asyncio.sleep(max(0, (w_bytes / args.bps) - elapsed))
+            read_total = adapter.totals["read"]
+            write_total = adapter.totals["write"]
+            delay = (write_total / args.bps) - elapsed
+            await asyncio.sleep(max(0, min(1, delay)))
             if elapsed > next_status:
                 logging.info(
-                    f"=== tx={w_bytes}b/{elapsed:.1f}s"
-                    f"={w_bytes/elapsed:.1f}bps "
-                    f"| rx={r_bytes}b/{elapsed:.1f}s"
-                    f"={r_bytes/elapsed:.1f}bps ==="
+                    f"=== tx={write_total}b/{elapsed:.1f}s"
+                    f"={write_total/elapsed:.1f}bps "
+                    f"| rx={read_total}b/{elapsed:.1f}s"
+                    f"={read_total/elapsed:.1f}bps ==="
                 )
                 next_status += 1.0
 
@@ -32,7 +33,7 @@ async def run(args):
 parser = argparse.ArgumentParser()
 parser.add_argument("--port", default="/dev/ttyACM0")
 parser.add_argument("--debug", action="store_true")
-parser.add_argument("--bps", type=float, default=1024)
+parser.add_argument("--bps", type=float, default=1000000)
 parser.add_argument("--packet", type=int, default=128)
 
 args = parser.parse_args()
