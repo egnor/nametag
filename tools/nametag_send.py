@@ -13,10 +13,10 @@ import PIL.Image  # type: ignore
 import nametag.aseprite_loader
 import nametag.bluefruit
 import nametag.logging_setup
-import nametag.protocol
+from nametag.protocol import Nametag, id_if_nametag
 
 
-async def send_to_nametag(tag: nametag.protocol.Nametag, args):
+async def send_to_nametag(tag: Nametag, args):
     if args.mode is not None:
         print(f"Setting mode: {args.mode}")
         await tag.set_mode(args.mode)
@@ -74,7 +74,7 @@ async def send_to_nametag(tag: nametag.protocol.Nametag, args):
         await tag.write_stash(data)
 
 
-async def talk_to_nametag(tag: nametag.protocol.Nametag, args):
+async def talk_to_nametag(tag: Nametag, args):
     print("Connected, reading data stash...")
     stash = await tag.read_stash()
     if stash:
@@ -87,14 +87,14 @@ async def talk_to_nametag(tag: nametag.protocol.Nametag, args):
 
 
 async def run(args):
-    print("=== Finding nametag ===")
-    next_print = 0.0
-    async with nametag.bluefruit.Bluefruit(port=args.port) as fruit:
+    async with nametag.bluefruit.Bluefruit(port=args.port) as adapter:
+        print("=== Finding nametag ===")
+        next_print = 0.0
         while True:
             devs = {
                 id: dev
-                for dev in fruit.scan.values()
-                for id in [nametag.protocol.id_if_nametag(dev)]
+                for dev in adapter.scan.values()
+                for id in [id_if_nametag(dev)]
                 if id
             }
 
@@ -121,7 +121,7 @@ async def run(args):
                 id, dev = next(iter(matched.items()))
                 print(f"=== Connecting to nametag {id} ===")
                 try:
-                    async with nametag.protocol.Nametag(adapter=fruit, dev=dev):
+                    async with Nametag(adapter=adapter, dev=dev) as tag:
                         await talk_to_nametag(tag, args)
                     print("Done and disconnected.")
                     break

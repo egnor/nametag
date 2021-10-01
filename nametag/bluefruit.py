@@ -1,7 +1,7 @@
 # Bluetooth LE I/O via the Bluefruit gadget
 
 import asyncio
-import contextlib
+import collections
 import logging
 import os
 import time
@@ -65,11 +65,17 @@ class Bluefruit:
         self._serial.__exit__(exc_type, exc, tb)
         try:
             await self._reader
+        except asyncio.CancelledError:
+            logging.debug("Reader task cancelled")
         except BluefruitError as exc:
             raise BluefruitError("Reader task failed") from exc
         finally:
             for dev in self.scan.values():
                 self._poison_device(dev, BluefruitError(f"Stopped"))
+
+    @property
+    def totals(self):
+        return self._serial.totals
 
     def check_running(self):
         if self._reader.done():
@@ -134,6 +140,11 @@ class Bluefruit:
             raise BluefruitError("Notify prepare for non-connected device")
         future = dev.notify[attr] = _set_future(use=dev.notify.get(attr))
         return future
+
+    def send_echo(self, data: bytes):
+        self.check_running()
+        data_text = _to_text(data)
+        self._send_serial(f"echo {data_text}")
 
     async def _reader_task(self):
         await self._serial.read()  # start fresh after buffered data
@@ -325,6 +336,7 @@ class _InputMessage(dict):
 
 class _SerialPort:
     def __init__(self, *, port):
+        self.totals = collections.Counter()
         self._port = port
         self._serial: pyserial.Serial = None
         self._from_serial: asyncio.Future = None
@@ -365,13 +377,15 @@ class _SerialPort:
     def write(self, data: bytes):
         if self._from_serial.done():
             self._from_serial.result()  # Raise exception if present
+        if not self._to_serial:
+            loop = asyncio.get_running_loop()
+            loop.add_writer(self._fileno, self._on_writable, self._fileno)
         self._to_serial.extend(data)
-        loop = asyncio.get_running_loop()
-        loop.add_writer(self._fileno, self._on_writable, self._fileno)
 
     def _on_readable(self, fileno):
         try:
             data = self._serial.read(self._serial.in_waiting)
+            self.totals["read"] += len(data)
             if not self._from_serial.done():
                 self._from_serial.set_result(bytearray(data))
             elif self._from_serial.cancelled() or self._from_serial.exception():
@@ -389,6 +403,7 @@ class _SerialPort:
         try:
             written = self._serial.write(self._to_serial)
             self._to_serial = self._to_serial[written:]
+            self.totals["write"] += written
         except OSError as os_error:
             logger.warning(f"Serial write failed ({self._port}): {os_error}")
             exc = BluefruitError("Serial write failed")

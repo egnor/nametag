@@ -91,7 +91,7 @@ async def scan_and_spawn(
             for id, dev in id_dev:
                 delay_end = max(
                     id_success_mono.get(id, 0) + options.success_delay,
-                    id_attempt_mono.get(id, 0) + options.attempt_delay
+                    id_attempt_mono.get(id, 0) + options.attempt_delay,
                 )
 
                 dev.fully_disconnected
