@@ -66,6 +66,8 @@ class Bluefruit:
         self._serial.__exit__(exc_type, exc, tb)
         try:
             await self._reader
+        except BluefruitError as exc:
+            raise BluefruitError("Reader task failed") from exc
         finally:
             for dev in self.scan.values():
                 self._poison_device(dev, BluefruitError(f"Stopped"))
@@ -135,24 +137,17 @@ class Bluefruit:
         return future
 
     async def _reader_task(self):
-        try:
-            await self._serial.read()  # start fresh after buffered data
-            line_count = 0
-            buffer = bytearray()
-            while True:
-                buffer.extend(await self._serial.read())
-                lines = buffer.split(b"\n")
-                buffer = lines.pop()
-                for line in lines:
-                    if line_count > 0:
-                        self._on_serial_line(line)
-                    line_count += 1
-        except asyncio.CancelledError:
-            logger.debug("Reader task cancelled")
-        except Exception:
-            logger.critical("Reader task failed", exc_info=True)
-            for dev in self.scan.values():
-                self._poison_device(dev, BluefruitError(f"Reader failed"))
+        await self._serial.read()  # start fresh after buffered data
+        line_count = 0
+        buffer = bytearray()
+        while True:
+            buffer.extend(await self._serial.read())
+            lines = buffer.split(b"\n")
+            buffer = lines.pop()
+            for line in lines:
+                if line_count > 0:
+                    self._on_serial_line(line)
+                line_count += 1
 
     def _poison_device(self, dev: Device, exc: Exception):
         if dev.handle and not dev.handle.done():
@@ -160,7 +155,7 @@ class Bluefruit:
             dev.handle.exception()  # Avoid warning if not accessed
 
         writes, dev.writes = dev.writes, []
-        for write in writes:
+        for write in [w for w in writes if not w.done()]:
             write.set_exception(exc)
             write.exception()  # Avoid warning if not accessed
 
@@ -317,7 +312,7 @@ class Bluefruit:
             )
 
         done, dev.writes = dev.writes[:count], dev.writes[count:]
-        for write in done:
+        for write in [w for w in done if not w.done()]:
             write.set_result(True)
 
     def _on_write_fail_message(self, message):
@@ -328,7 +323,7 @@ class Bluefruit:
 
         exc = BluefruitError(f"Write failed: {message}")
         writes, dev.writes = dev.writes, []
-        for write in writes:
+        for write in [w for w in writes if not w.done()]:
             write.set_exception(exc)
 
 
@@ -352,7 +347,7 @@ class _SerialPort:
 
     def __enter__(self):
         try:
-            logger.debug(f"Opening serial: {self._port}")
+            logger.debug(f"Opening serial ({self._port})")
             self._serial = serial.Serial(self._port, timeout=0)
             self._fileno = self._serial.fileno()
 
@@ -368,13 +363,13 @@ class _SerialPort:
     def __exit__(self, exc_type, exc, tb):
         if self._serial and self._serial.is_open:
             try:
-                logger.debug(f"Closing serial: {self._port}")
+                logger.debug(f"Closing serial ({self._port})")
                 loop = asyncio.get_running_loop()
                 loop.remove_reader(self._fileno)
                 loop.remove_writer(self._fileno)
                 self._serial.close()
-            except serial.SerialException:
-                logger.error(f"Serial close failed", exc_info=True)
+            except OSError as exc:
+                logger.warning(f"Serial close failed ({self._port}): {exc}")
 
     async def read(self) -> bytearray:
         data = await self._from_serial
@@ -391,19 +386,27 @@ class _SerialPort:
     def _on_readable(self, fileno):
         try:
             data = self._serial.read(self._serial.in_waiting)
-            if self._from_serial.done():
-                self._from_serial.result().extend(data)
-            else:
+            if not self._from_serial.done():
                 self._from_serial.set_result(bytearray(data))
-        except serial.SerialException as exc:
+            elif self._from_serial.cancelled() or self._from_serial.exception():
+                asyncio.get_running_loop().remove_reader(fileno)
+            elif not self._from_serial.exception():
+                self._from_serial.result().extend(data)
+        except OSError as os_error:
+            logger.warning(f"Serial read failed ({self._port}): {os_error}")
             asyncio.get_running_loop().remove_reader(fileno)
+            exc = BluefruitError("Serial read failed")
+            exc.__cause__ = os_error
             self._from_serial = _set_future(exc=exc, use=self._from_serial)
 
     def _on_writable(self, fileno):
         try:
             written = self._serial.write(self._to_serial)
             self._to_serial = self._to_serial[written:]
-        except serial.SerialException as exc:
+        except OSError as os_error:
+            logger.warning(f"Serial write failed ({self._port}): {os_error}")
+            exc = BluefruitError("Serial write failed")
+            exc.__cause__ = os_error
             self._from_serial = _set_future(exc=exc, use=self._from_serial)
             self._to_serial = b""
 

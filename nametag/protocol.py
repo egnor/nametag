@@ -31,7 +31,7 @@ class Nametag:
     def __init__(self, *, adapter: Bluefruit, dev: Device):
         tag_id = id_if_nametag(dev)
         if not tag_id:
-            raise ProtocolError("Device ({dev.addr}) is not a Nametag")
+            raise ValueError("Device ({dev.addr}) is not a Nametag")
         self.adapter = adapter
         self.dev = dev
         self.id = tag_id
@@ -42,7 +42,10 @@ class Nametag:
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
-        await self.adapter.disconnect(self.dev)
+        try:
+            await self.adapter.disconnect(self.dev)
+        except BluefruitError as exc:
+            logger.warning(f"[{self.id}] Disconnect failed: {exc}")
 
     async def show_glyphs(self, glyphs: Iterable[PIL.Image.Image]):
         as_bytes = []

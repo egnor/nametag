@@ -54,10 +54,12 @@ async def scan_and_spawn(
                 logger.debug(f"[{tag.id}] Done and disconnected")
             except asyncio.CancelledError:
                 logger.debug(f"[{tag.id}] Task cancelled")
-            except nametag.bluefruit.BluefruitError as e:
-                logger.error(f"[{tag.id}] {e}")  # Common; skip stack trace
+                raise
+            except nametag.bluefruit.BluefruitError as exc:
+                logger.error(f"[{tag.id}] {exc}")  # Common; skip stack trace
             except Exception:
                 logger.error(f"[{tag.id}] Task failed", exc_info=True)
+                raise
 
         def task_done(task):
             adapter.busy_connecting.discard(tag.dev.addr)
