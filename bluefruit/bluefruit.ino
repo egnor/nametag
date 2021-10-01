@@ -46,10 +46,8 @@ static uint32_t next_status_millis = 0;
 void setup() {
   Serial.begin(115200);
   while (!Serial) {
-    digitalWrite(LED_BUILTIN, true);
-    delay(150);
-    digitalWrite(LED_BUILTIN, false);
-    delay(50);
+    digitalWrite(LED_BUILTIN, (millis() % 500) < 450);
+    delay(10);
   }
   bluetooth_setup();
 }
@@ -59,10 +57,6 @@ void loop() {
   if (now >= next_status_millis) {
     next_status_millis = now + 1000;
     Serial.printf("--- time=%d\n", now / 1000);
-    digitalToggle(LED_BUILTIN);
-  }
-  if (!Serial) {
-    digitalWrite(LED_BUILTIN, (now > next_status_millis - 50));
   }
 
   bluetooth_poll();
@@ -86,11 +80,15 @@ static void input_poll() {
     }
   }
 
-  if (!Serial) {
+  while (!Serial) {
+    digitalWrite(LED_BUILTIN, (millis() % 500) < 50);
     for (int h = 0; h < 20; ++h) {
       sd_ble_gap_disconnect(h, BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
     }
+    delay(10);
   }
+
+  digitalWrite(LED_BUILTIN, (millis() % 1000) < 500);
 }
 
 static void on_input_line(char *line) {
