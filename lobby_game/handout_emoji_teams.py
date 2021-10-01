@@ -43,8 +43,13 @@ async def check_tag(
 async def run(args):
     tag_config = lobby_game.tag_data.load_configs(args.config)
     async with nametag.bluefruit.Bluefruit(port=args.port) as adapter:
+        options = nametag.scanner.ScannerOptions()
+        options.success_delay = 86400
         await nametag.scanner.scan_and_spawn(
-            adapter=adapter, runner=check_tag, tag_config=tag_config
+            adapter=adapter,
+            options=options,
+            runner=check_tag,
+            tag_config=tag_config,
         )
 
 

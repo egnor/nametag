@@ -53,9 +53,9 @@ async def scan_and_spawn(
                 state.success_monotime = time.monotonic()
                 logger.debug(f"[{tag.id}] Done and disconnected")
             except asyncio.CancelledError:
-                pass
+                logger.debug(f"[{tag.id}] Task cancelled")
             except nametag.bluefruit.BluefruitError as e:
-                logger.error(f"[{tag.id}] {e}")
+                logger.error(f"[{tag.id}] {e}")  # Common; skip stack trace
             except Exception:
                 logger.error(f"[{tag.id}] Task failed", exc_info=True)
 
@@ -72,12 +72,14 @@ async def scan_and_spawn(
         state.task.add_done_callback(task_done)
 
     def priority(id: str):
-        return ((states.get(id) or State()).attempt_monotime, id)
+        state = states.get(id) or State()
+        return (state.success_monotime, state.attempt_monotime, id)
 
     try:
         logging.debug("Starting scan loop...")
         next_status_monotime = 0.0
         while True:
+            adapter.check_running()
             mono = time.monotonic()
             found = {
                 id: dev
@@ -88,32 +90,33 @@ async def scan_and_spawn(
 
             found = dict(sorted(found.items(), key=lambda kv: priority(kv[0])))
             spawned = False
-            status: List[str] = []
+            status: Dict[str, str] = {}
             for id, dev in found.items():
                 state = states.get(id) or State()
                 if dev.fully_connected:
-                    status.append(f"|{id}|")
+                    status[id] = f"|{id}|"
                 elif not dev.fully_disconnected:
-                    status.append(f":{id}:")
+                    status[id] = f":{id}:"
                 elif state.task:
-                    status.append(f".{id}.")
+                    status[id] = f".{id}."
                 elif mono < state.success_monotime + options.success_delay:
-                    status.append(f"<{id}>")
+                    status[id] = f"<{id}>"
                 elif mono < state.attempt_monotime + options.attempt_delay:
-                    status.append(f"<{id}>")
+                    status[id] = f"<{id}>"
                 elif mono > dev.monotime + options.maximum_age:
-                    status.append(f"/{id}/")
+                    status[id] = f"/{id}/"
                 elif dev.rssi <= options.minimum_rssi or not dev.rssi:
-                    status.append(f"-{id}-")
+                    status[id] = f"-{id}-"
                 elif not adapter.ready_to_connect(dev):
-                    status.append(f"({id})")
+                    status[id] = f"({id})"
                 else:
+                    status[id] = f"*{id}*"
                     spawn_connection(id, dev)
-                    status.append(f"*{id}*")
                     spawned = True
 
             if mono >= next_status_monotime or spawned:
-                logging.info("Tags: " + (" ".join(status) or "(none)"))
+                status_list = [v for k, v in sorted(status.items())]
+                logging.info("Tags: " + (" ".join(status_list) or "(none)"))
                 next_status_monotime = mono + options.status_interval
 
             await asyncio.sleep(options.loop_delay)
@@ -121,7 +124,7 @@ async def scan_and_spawn(
     finally:
         tasks = [state.task for state in states.values() if state.task]
         if tasks:
-            logger.debug("Waiting for {len(tasks)} tasks...")
+            logger.debug(f"Waiting for {len(tasks)} tasks...")
             [task.cancel() for task in tasks]
             await asyncio.gather(*tasks, return_exceptions=True)
             logger.debug("All tasks complete")
