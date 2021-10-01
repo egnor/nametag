@@ -51,7 +51,6 @@ class Bluefruit:
         self._handles: Dict[int, Device] = {}
         self._serial: _SerialPort = _SerialPort(port=port)
         self._reader: asyncio.Task = None
-        self._scanning_monotime: float = 0.0
 
     async def __aenter__(self):
         logger.debug("Starting serial reader task...")
@@ -262,8 +261,6 @@ class Bluefruit:
         dev.reads[attr] = _set_future(exc=exc, use=dev.reads[attr])
 
     def _on_scan_message(self, message):
-        self._on_scan_start_message(message)  # For startup or backstop
-
         addr = message["scan"]
         dev = self.scan.get(addr)
         if not dev:
@@ -275,27 +272,16 @@ class Bluefruit:
         dev.uuids = {int(u, 16) for u in message.get("u", "").split(",") if u}
         dev.mdata = _to_binary(str(message.get("m", "")))
 
-    def _on_scan_stop_message(self, message):
-        if self._scanning_monotime:
-            logger.debug("Scanning inactive")
-            self._scanning_monotime = 0.0
-
-    def _on_scan_start_message(self, message):
-        if not self._scanning_monotime:
-            logger.debug("Scanning active")
-            self._scanning_monotime = time.monotonic()
-
     def _on_time_message(self, message):
-        if self._scanning_monotime:  # Age things out iff scanning is active.
-            mono = time.monotonic()
-            self.scan, old_scan = {}, self.scan
-            for addr, dev in old_scan.items():
-                h = dev.handle
-                age = mono - max(dev.monotime, self._scanning_monotime)
-                if age < 3.0 or not dev.fully_disconnected:
-                    self.scan[addr] = dev
-                else:
-                    logger.debug(f"[{dev.addr}] LOST ({age:.1f}s)")
+        mono = time.monotonic()
+        self.scan, old_scan = {}, self.scan
+        for addr, dev in old_scan.items():
+            h = dev.handle
+            age = mono - dev.monotime
+            if age < 60.0 or not dev.fully_disconnected:
+                self.scan[addr] = dev
+            else:
+                logger.debug(f"[{dev.addr}] LOST ({age:.1f}s)")
 
     def _on_write_message(self, message):
         dev = self._handles.get(int(message["conn"]))

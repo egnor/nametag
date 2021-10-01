@@ -49,4 +49,4 @@ args = parser.parse_args()
 if args.debug:
     nametag.logging_setup.enable_debug()
 
-asyncio.run(run(args))
+asyncio.run(run(args), debug=args.debug)
