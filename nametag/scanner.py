@@ -75,11 +75,10 @@ async def scan_and_spawn(
         logging.debug("Starting scan loop...")
         next_status_monotime = 0.0
         while True:
-            adapter.check_running()
             mono = time.monotonic()
             id_dev = [
                 (tag_id, dev)
-                for dev in adapter.scan.values()
+                for dev in adapter.devices.values()
                 for tag_id in [nametag.protocol.id_if_nametag(dev)]
                 if tag_id and dev.monotime > mono - 2 * options.maximum_age
             ]

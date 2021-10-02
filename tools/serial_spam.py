@@ -21,8 +21,8 @@ with serial.Serial(args.port, baudrate=args.baud, timeout=0) as serial:
         elapsed = time.monotonic() - start_mono
         if elapsed > next_status:
             print(
-                f"tx={tx_total}b/{elapsed:.1f}s={tx_total/elapsed:.1f}bps "
-                f"| rx={rx_total}b/{elapsed:.1f}s={rx_total/elapsed:.1f}bps"
+                f"tx={tx_total}b/{elapsed:.1f}s={tx_total/elapsed:.1f}Bps "
+                f"| rx={rx_total}b/{elapsed:.1f}s={rx_total/elapsed:.1f}Bps"
             )
             next_status += 1.0
             continue

@@ -53,7 +53,7 @@ class Device:
 
 class Bluefruit:
     def __init__(self, *, port):
-        self.scan: Dict[str, Device] = {}
+        self._devs: Dict[str, Device] = {}
         self.busy_connecting: Set[str] = set()
 
         self._handles: Dict[int, Device] = {}
@@ -83,16 +83,22 @@ class Bluefruit:
     def totals(self):
         return self._serial.totals
 
-    def check_running(self):
-        if self._reader.done():
-            self._reader.result()  # Raise an exception if there was one.
+    @property
+    def devices(self):
+        self._reader.done() and self._reader.result()
+        return self._devs
 
     def ready_to_connect(self, dev: Device) -> bool:
-        self.check_running()
-        return dev.fully_disconnected and not self.busy_connecting
+        self._reader.done() and self._reader.result()
+        active = sum(1 for d in self._devs.values() if not d.fully_disconnected)
+        return (
+            active < MAX_CONNECTIONS
+            and dev.fully_disconnected
+            and not self.busy_connecting
+        )
 
     async def connect(self, dev: Device):
-        self.check_running()
+        self._reader.done() and self._reader.result()
         if not dev.fully_disconnected:
             raise BluefruitError(f"Connect ({dev.addr}) but not disconnected")
         if self.busy_connecting:
@@ -113,7 +119,7 @@ class Bluefruit:
         except BluefruitError:
             return  # Error on connect/disconnect, assume not connected
 
-        self.check_running()
+        self._reader.done() and self._reader.result()
         if handle >= 0:
             dev.handle = _set_future(update=dev.handle)
             await self._send_command(f"disconn {handle}")
@@ -123,7 +129,7 @@ class Bluefruit:
         while len(dev.writes) >= MAX_WRITES:
             await dev.writes[0]
 
-        self.check_running()
+        self._reader.done() and self._reader.result()
         if not dev.fully_connected:
             raise BluefruitError("Write to non-connected device")
         dev.writes.append(_set_future())
@@ -131,7 +137,7 @@ class Bluefruit:
         await self._send_command(f"write {dev.handle.result()} {attr} {text}")
 
     async def read(self, dev: Device, attr: int) -> bytes:
-        self.check_running()
+        self._reader.done() and self._reader.result()
         if dev.writes:
             await dev.writes[-1]  # Wait for writes so far to clear.
         if not dev.fully_connected:
@@ -141,21 +147,21 @@ class Bluefruit:
         return await dev.reads[attr]
 
     def prepare_notify(self, dev: Device, attr: int) -> asyncio.Future:
-        self.check_running()
+        self._reader.done() and self._reader.result()
         if not dev.fully_connected:
             raise BluefruitError("Notify prepare for non-connected device")
         future = dev.notify[attr] = _set_future(update=dev.notify.get(attr))
         return future
 
     async def send_dummy(self, data: bytes, *, echo: bool = False):
-        self.check_running()
+        self._reader.done() and self._reader.result()
         command = "echo" if echo else "noop"
         await self._send_command(f"{command} {_to_text(data)}")
 
     async def _reader_task(self):
         logger.debug("Starting serial reader task...")
         buffer = bytearray(await self._serial.read())  # Wait for first read.
-        logger.debug("Receiving from device...");
+        logger.debug("Receiving from device...")
         self._send_space = _set_future(MAX_SEND_SPACE, update=self._send_space)
         while True:
             buffer.extend(await self._serial.read())
@@ -185,7 +191,7 @@ class Bluefruit:
     def _poison_all(self, exc: Exception):
         self._send_space = _set_future(exc=exc, update=self._send_space)
         self._send_space.exception()
-        for dev in self.scan.values():
+        for dev in self._devs.values():
             self._poison_device(dev, exc)
 
     async def _send_command(self, line: str):
@@ -216,7 +222,7 @@ class Bluefruit:
         logger.error(f"Bluefruit error: {message}")
 
     def _on_conn_message(self, message):
-        dev = self.scan.get(message["conn"])
+        dev = self._devs.get(message["conn"])
         handle = int(message["handle"])
         if not dev:
             logger.warning(f'Unmatched "conn": {message}')
@@ -229,12 +235,12 @@ class Bluefruit:
     def _on_conn_fail_message(self, message):
         addr = message["conn_fail"]
         if isinstance(addr, str):
-            failed = [self.scan.get(addr)]
+            failed = [self._devs.get(addr)]
             if not failed[0]:
                 logger.warning(f'Unmatched "conn_fail": {message}')
                 return
         else:
-            failed = list(self.scan.values())
+            failed = list(self._devs.values())
 
         for dev in failed:
             if not dev.handle.done():
@@ -300,9 +306,9 @@ class Bluefruit:
 
     def _on_scan_message(self, message):
         addr = message["scan"]
-        dev = self.scan.get(addr)
+        dev = self._devs.get(addr)
         if not dev:
-            dev = self.scan[addr] = Device(addr=addr)
+            dev = self._devs[addr] = Device(addr=addr)
             logger.debug(f"[{dev.addr}] NEW DEVICE")
 
         dev.monotime = time.monotonic()
@@ -312,12 +318,12 @@ class Bluefruit:
 
     def _on_time_message(self, message):
         mono = time.monotonic()
-        self.scan, old_scan = {}, self.scan
+        self._devs, old_scan = {}, self._devs
         for addr, dev in old_scan.items():
             h = dev.handle
             age = mono - dev.monotime
             if age < MAX_SCAN_AGE or not dev.fully_disconnected:
-                self.scan[addr] = dev
+                self._devs[addr] = dev
             else:
                 logger.debug(f"[{dev.addr}] LOST ({age:.1f}s)")
 

@@ -23,9 +23,9 @@ async def run(args):
             if elapsed > next_status:
                 logging.info(
                     f"=== tx={write_total}b/{elapsed:.1f}s"
-                    f"={write_total/elapsed:.1f}bps "
+                    f"={write_total/elapsed:.1f}Bps "
                     f"| rx={read_total}b/{elapsed:.1f}s"
-                    f"={read_total/elapsed:.1f}bps ==="
+                    f"={read_total/elapsed:.1f}Bps ==="
                 )
                 next_status += 1.0
 
