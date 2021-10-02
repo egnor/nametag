@@ -93,7 +93,7 @@ async def run(args):
         while True:
             devs = {
                 id: dev
-                for dev in adapter.devices.values()
+                for dev in adapter.devices().values()
                 for id in [id_if_nametag(dev)]
                 if id
             }

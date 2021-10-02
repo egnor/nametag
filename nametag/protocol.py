@@ -42,6 +42,9 @@ class Nametag:
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
+        einfo = (exc_type, exc, None) if isinstance(exc, Exception) else None
+        eintro = " for error:" if einfo else "..."
+        logger.debug(f"[{self.id}] Disconnecting{eintro}", exc_info=einfo)
         try:
             await self.adapter.disconnect(self.dev)
         except BluefruitError as exc:

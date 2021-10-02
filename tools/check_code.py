@@ -14,7 +14,7 @@ def run(*args):
     check_call(args)
 
 
-excludes = ["external/", "bluefruit/.ardi/"]
+excludes = ["external/", "arduino/work/"]
 exclude_re = f"({'|'.join(re.escape(e) for e in excludes)})"
 run("black", "-l", "80", "--exclude", f"^/{exclude_re}", ".")
 

@@ -78,7 +78,7 @@ async def scan_and_spawn(
             mono = time.monotonic()
             id_dev = [
                 (tag_id, dev)
-                for dev in adapter.devices.values()
+                for dev in adapter.devices().values()
                 for tag_id in [nametag.protocol.id_if_nametag(dev)]
                 if tag_id and dev.monotime > mono - 2 * options.maximum_age
             ]
@@ -121,10 +121,10 @@ async def scan_and_spawn(
 
     finally:
         if id_task:
-            logger.debug(f"Waiting for {len(id_task)} tasks...")
+            logger.debug(f"Stopping {len(id_task)} tasks pre-exit...")
             [task.cancel() for task in id_task.values()]
-            await asyncio.gather(*id_task.values(), return_exceptions=True)
-            logger.debug("All tasks complete")
+            await asyncio.wait(id_task.values())
+            logger.debug("All tasks stopped, exiting...")
 
 
 if __name__ == "__main__":

@@ -3,8 +3,7 @@
 *.pyc
 __pycache__/
 
-.ardi/
-build/
+arduino/work/
 
 tmp.*
-tmp/
+tmp
