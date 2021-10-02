@@ -2,13 +2,14 @@
 
 import argparse
 import os
+import platform
 from pathlib import Path
 from subprocess import run
 
 source_dir = Path(__file__).parent
 arduino_dir = source_dir / "work"
 bin_dir = source_dir.parent / "external" / "arduino"
-cli_bin = bin_dir / "arduino-cli-linux-x64"  # TODO: detect architecture
+cli_bin = bin_dir / f"arduino-cli-{platform.system()}-{platform.machine()}"
 
 os.environ["ARDUINO_DIRECTORIES_DATA"] = str(arduino_dir / "data")
 os.environ["ARDUINO_DIRECTORIES_DOWNLOADS"] = str(arduino_dir / "downloads")
@@ -35,7 +36,7 @@ if args.setup:
     run([cli_bin, "upgrade"], check=True)
     run([cli_bin, "core", "install", "adafruit:nrf52"], check=True)
 
-extra_flags = "-DSERIAL_BUFFER_SIZE=1024"
+extra_flags = "-DSERIAL_BUFFER_SIZE=2048"
 
 command = [
     str(cli_bin),
