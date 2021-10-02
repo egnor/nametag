@@ -42,7 +42,7 @@ async def run(args):
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--port", default="/dev/ttyACM0")
+parser.add_argument("--port")
 parser.add_argument("--debug", action="store_true")
 parser.add_argument("--toggle_interval", type=float, default=10.0)
 args = parser.parse_args()

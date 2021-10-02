@@ -39,11 +39,10 @@ static bool show_scan = true;
 static char input_line[256];
 static int line_size = 0;
 static int rx_ack_count = 0;
-static uint32_t last_data_millis = 0;
 static uint32_t next_status_millis = 0;
 
 void setup() {
-  Serial.begin(250000);
+  Serial.begin(115200);
   while (!Serial) {
     digitalWrite(LED_BUILTIN, (millis() % 500) < 50);
     delay(10);
@@ -73,13 +72,11 @@ static void input_poll() {
     delay(10);
   }
 
-  const uint32_t now = millis();
-  digitalWrite(LED_BUILTIN, (now % 1000) < 500);
+  digitalWrite(LED_BUILTIN, (millis() % 1000) < 500);
 
   while (Serial.available()) {
     const char ch = Serial.read(); 
     ++rx_ack_count;
-    last_data_millis = now;
     if (ch == '\r' or ch == '\n') {
       input_line[line_size] = '\0';
       on_input_line(input_line);
@@ -94,7 +91,7 @@ static void input_poll() {
     }
   }
 
-  if (rx_ack_count >= 32 && now > last_data_millis + 2) {
+  if (rx_ack_count >= 32) {
     Serial.printf("rx=%d\n", rx_ack_count);
     rx_ack_count = 0;
   }

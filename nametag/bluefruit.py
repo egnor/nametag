@@ -19,7 +19,8 @@ class BluefruitError(Exception):
     pass
 
 
-BAUD = 250000
+DEFAULT_PORT = "/dev/ttyUSB0"
+BAUD = 115200
 MAX_SEND_SPACE = 64
 MAX_CONNECTIONS = 5
 MAX_WRITES = 5
@@ -57,7 +58,7 @@ class Bluefruit:
         self.busy_connecting: Set[str] = set()
 
         self._handles: Dict[int, Device] = {}
-        self._serial: _SerialPort = _SerialPort(port=port)
+        self._serial: _SerialPort = _SerialPort(port=port or DEFAULT_PORT)
         self._reader: asyncio.Task = None
         self._send_space: asyncio.Future = _set_future()
 
@@ -73,7 +74,7 @@ class Bluefruit:
         try:
             await self._reader
         except asyncio.CancelledError:
-            logging.debug("Reader task cancelled")
+            logger.debug("Reader task cancelled")
         except BluefruitError as exc:
             raise BluefruitError("Reader task failed") from exc
         finally:
@@ -100,10 +101,10 @@ class Bluefruit:
     async def connect(self, dev: Device):
         self._reader.done() and self._reader.result()
         if not dev.fully_disconnected:
-            raise BluefruitError(f"Connect ({dev.addr}) but not disconnected")
+            raise BluefruitError(f"[{dev.addr}] Connect but not disconnected")
         if self.busy_connecting:
             b = ", ".join(self.busy_connecting)
-            raise BluefruitError(f"Connect ({dev.addr}) while busy ({b})")
+            raise BluefruitError(f"[{dev.addr}] Connect while busy ({b})")
         dev.handle = _set_future(update=dev.handle)
         self.busy_connecting.add(dev.addr)
         await self._send_command(f"conn {dev.addr}")
@@ -113,7 +114,10 @@ class Bluefruit:
             self.busy_connecting.remove(dev.addr)
 
     async def disconnect(self, dev: Device):
-        await asyncio.gather(*dev.writes, return_exceptions=True)  # Flush.
+        if dev.writes:
+            logger.debug(f"[{dev.addr}] Wait for {len(dev.writes)} writes...")
+            await asyncio.gather(*dev.writes, return_exceptions=True)
+
         try:
             handle = await dev.handle
         except BluefruitError:
@@ -215,7 +219,7 @@ class Bluefruit:
             dispatch_method = getattr(self, f"_on_{first_key}_message", None)
             if dispatch_method:
                 dispatch_method(message)
-            if first_key not in ("scan", "time", "ERR"):
+            if first_key != "scan":
                 logger.debug(f"{'<=' if dispatch_method else '<-'} {message}")
 
     def _on_ERR_message(self, message):

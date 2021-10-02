@@ -6,7 +6,7 @@ import time
 import serial  # type: ignore
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--port", default="/dev/ttyACM0")
+parser.add_argument("--port", default="/dev/ttyUSB0")
 parser.add_argument("--baud", type=int, default=115200)
 parser.add_argument("--bps", type=float, default=1000000)
 parser.add_argument("--chunk", type=int, default=128)

@@ -31,7 +31,7 @@ async def run(args):
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--port", default="/dev/ttyACM0")
+parser.add_argument("--port")
 parser.add_argument("--debug", action="store_true")
 parser.add_argument("--bps", type=float, default=1000000)
 parser.add_argument("--packet", type=int, default=128)
