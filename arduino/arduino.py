@@ -35,10 +35,10 @@ if args.setup:
     run([cli_bin, "upgrade"], check=True)
     run([cli_bin, "core", "install", "adafruit:nrf52"], check=True)
 
-extra_flags = "-DSERIAL_BUFFER_SIZE=512"
+extra_flags = "-DSERIAL_BUFFER_SIZE=1024"
 
 command = [
-    cli_bin,
+    str(cli_bin),
     "compile",
     f"--build-cache-path={arduino_dir / 'build_cache'}",
     f"--build-path={arduino_dir / 'build'}",

@@ -73,6 +73,9 @@ async def send_to_nametag(tag: Nametag, args):
         print(f"Setting data stash: {data.hex()}")
         await tag.write_stash(data)
 
+    print("Flushing output...")
+    await tag.flush()
+
 
 async def talk_to_nametag(tag: Nametag, args):
     print("Connected, reading data stash...")

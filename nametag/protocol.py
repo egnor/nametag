@@ -114,6 +114,9 @@ class Nametag:
 
         return None  # Invalid stash
 
+    async def flush(self):
+        await self.adapter.flush(self.dev)
+
     async def send_raw_packet(self, packet: bytes):
         await self.adapter.write(self.dev, 3, packet)
 

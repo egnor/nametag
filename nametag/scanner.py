@@ -20,6 +20,7 @@ class ScannerOptions:
     loop_delay: float = 0.1
     maximum_age: float = 5.0
     minimum_rssi: int = -80
+    task_timeout: float = 30.0
     status_interval: float = 0.5
 
 
@@ -42,20 +43,24 @@ async def scan_and_spawn(
             adapter.busy_connecting.remove(tag.dev.addr)  # Handoff
             async with tag:
                 logger.debug(f"[{tag.id}] Connected, running tag task...")
-                await runner(tag, *args, **kwargs)
-                logger.debug(f"[{tag.id}] Tag task complete, disconnecting...")
-            id_success_mono[tag.id] = time.monotonic()
-            logger.debug(f"[{tag.id}] Done and disconnected")
+                await asyncio.wait_for(
+                    runner(tag, *args, **kwargs), timeout=options.task_timeout
+                )
+                logger.debug(f"[{tag.id}] Tag task complete, flushing...")
+                await tag.flush()
+                logger.debug(f"[{tag.id}] Flush complete, disconnecting...")
 
         def task_done(task):
             adapter.busy_connecting.discard(tag.dev.addr)
             assert id_task.pop(tag.id) is task
             try:
                 task.result()
+                id_success_mono[tag.id] = time.monotonic()
+                logger.debug(f"[{tag.id}] Tag task successful")
             except asyncio.CancelledError:
                 logger.debug(f"[{tag.id}] Tag task cancelled")
             except nametag.bluefruit.BluefruitError as exc:
-                logger.warning(f"[{tag.id}] {exc}")  # Common; skip stack trace
+                logger.warning(f"[{tag.id}] {exc}")
             except Exception:
                 logger.error(f"[{tag.id}] Tag task failed", exc_info=True)
 
@@ -85,7 +90,7 @@ async def scan_and_spawn(
 
             id_dev.sort(key=lambda id_dev: priority(id_dev[0]))
             spawned = False
-            id_status = []
+            id_status: Dict[str, str] = {}
             for id, dev in id_dev:
                 delay_end = max(
                     id_dict.get(id, -delay_opt) + delay_opt
@@ -97,26 +102,29 @@ async def scan_and_spawn(
 
                 dev.fully_disconnected
                 if dev.fully_connected:
-                    id_status.append((id, f"|{id}|"))
+                    id_status[id] = f"|{id}|"
                 elif not dev.fully_disconnected:
-                    id_status.append((id, f":{id}:"))
+                    id_status[id] = f":{id}:"
                 elif id in id_task:
-                    id_status.append((id, f".{id}."))
+                    id_status[id] = f".{id}."
                 elif mono < delay_end:
-                    id_status.append((id, f"<{id}>"))
+                    id_status[id] = f"+{id}+"
                 elif dev.monotime < mono - options.maximum_age:
-                    id_status.append((id, f"/{id}/"))
+                    id_status[id] = f"/{id}/"
                 elif dev.rssi <= options.minimum_rssi or not dev.rssi:
-                    id_status.append((id, f"-{id}-"))
+                    id_status[id] = f"-{id}-"
                 elif not adapter.ready_to_connect(dev):
-                    id_status.append((id, f"({id})"))
+                    id_status[id] = f"({id})"
                 else:
-                    id_status.append((id, f"*{id}*"))
+                    id_status[id] = f"*{id}*"
                     spawn_connection(id, dev)
                     spawned = True
 
+            for id in id_task.keys():
+                id_status.setdefault(id, f"_{id}_")
+
             if mono >= next_status_monotime or spawned:
-                status = " ".join(s for id, s in sorted(id_status))
+                status = " ".join(s for id, s in sorted(id_status.items()))
                 logging.info("Tags: " + (status or "(none)"))
                 next_status_monotime = mono + options.status_interval
 

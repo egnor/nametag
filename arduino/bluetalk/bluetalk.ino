@@ -101,17 +101,14 @@ static void on_input_line(char *line) {
     on_disconn_command(line);
   } else if (!strcmp(command, "hide")) {
     show_scan = false;
-    Serial.println("ack=hide");
   } else if (!strcmp(command, "show")) {
     show_scan = true;
-    Serial.println("ack=show");
   } else if (!strcmp(command, "echo")) {
     const int size = decode_escaped(line);
-    Serial.print("ack=echo echo=");
+    Serial.print("echo=");
     print_escaped(line, size);
     Serial.println();
   } else if (!strcmp(command, "noop")) {
-    Serial.println("ack=noop");
   } else if (*command) {
     Serial.printf("*** ERR=input command=\"%s\"", command);
     Serial.println();
@@ -172,7 +169,7 @@ static void on_conn_command(char *args) {
     Serial.printf(" code=0x%x\n", connect_err);
     return;
   }
-  Serial.print("ack=conn addr=");
+  Serial.print("conn_start addr=");
   print_address(&addr);
   Serial.println();
 }
@@ -197,7 +194,7 @@ static void on_disconn_command(char *args) {
         "*** disconn_fail conn=%d code=0x%x\n", handle, disconn_err);
     return;
   }
-  Serial.printf("ack=disconn conn=%d\n", handle);
+  Serial.printf("disconn_start conn=%d\n", handle);
 }
 
 static void on_read_command(char *args) {
@@ -231,7 +228,7 @@ static void on_read_command(char *args) {
     }
     return;
   }
-  Serial.printf("ack=read conn=%d attr=%d\n", conn_handle, attr_handle);
+  Serial.printf("read_start conn=%d attr=%d\n", conn_handle, attr_handle);
 }
 
 static void on_write_command(char *args) {
@@ -273,7 +270,7 @@ static void on_write_command(char *args) {
     }
     return;
   }
-  Serial.printf("ack=write conn=%d attr=%d\n", conn_handle, attr_handle);
+  Serial.printf("write_start conn=%d attr=%d\n", conn_handle, attr_handle);
 }
 
 

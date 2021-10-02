@@ -21,7 +21,7 @@ class BluefruitError(Exception):
 
 DEFAULT_PORT = "/dev/ttyUSB0"
 BAUD = 115200
-MAX_COMMAND_SIZE = 80  # Theoretically should be 64, but writes are longer
+MAX_COMMAND_SIZE = 80
 MAX_CONNECTIONS = 5
 MAX_WRITES = 5
 MAX_SCAN_AGE = 60.0
@@ -58,9 +58,6 @@ class Bluefruit:
         self._handles: Dict[int, Device] = {}
         self._serial: _SerialPort = _SerialPort(port=port or DEFAULT_PORT)
         self._reader: asyncio.Task = None
-
-        self._ack_received: asyncio.Future = _new_future(True)
-        self._ack_expected: str = ""
 
         self.busy_connecting: Set[str] = set()
         self.totals = self._serial.totals
@@ -115,13 +112,6 @@ class Bluefruit:
             self.busy_connecting.remove(dev.addr)
 
     async def disconnect(self, dev: Device):
-        if dev.writes:
-            logger.debug(
-                f"[{dev.addr}] Await {len(dev.writes)} writes pre-disconnect..."
-            )
-            await asyncio.wait(dev.writes)
-            logging.debug(f"[{dev.addr}] All writes done, disconnecting...")
-
         try:
             handle = await dev.handle
         except BluefruitError:
@@ -131,12 +121,12 @@ class Bluefruit:
             self._reader.done() and self._reader.result()
             dev.handle = _update_future(dev.handle)
             await self._send_command("disconn", handle)
-            await dev.handle
+            # Does NOT block for completion ("await dev.handle").
 
     async def write(self, dev: Device, attr: int, data: bytes):
         while len(dev.writes) >= MAX_WRITES:
             logger.debug(
-                "[{dev.addr}] Await 1/{len(dev.writes)} writes pre-write..."
+                f"[{dev.addr}] {len(dev.writes)} writes pending; await one..."
             )
             await dev.writes[0]
         if not dev.fully_connected:
@@ -148,12 +138,13 @@ class Bluefruit:
         logger.debug(f"[{dev.addr}] Sending write; {len(dev.writes)} pending")
         await self._send_command("write", dev.handle.result(), attr, text)
 
-    async def read(self, dev: Device, attr: int) -> bytes:
+    async def flush(self, dev: Device):
         if dev.writes:
-            logger.debug(
-                "[{dev.addr}] Await {len(dev.writes)} writes before read..."
-            )
+            logger.debug(f"[{dev.addr}] Flushing {len(dev.writes)} writes...")
             await dev.writes[-1]  # Wait for writes so far to clear.
+            logger.debug(f"[{dev.addr}] All writes done")
+
+    async def read(self, dev: Device, attr: int) -> bytes:
         if not dev.fully_connected:
             raise BluefruitError("Read from non-connected device")
 
@@ -199,8 +190,6 @@ class Bluefruit:
             _update_future(notify, exc=exc)
 
     def _poison_all(self, exc: Exception):
-        if not self._ack_received.done():
-            _update_future(self._ack_received, exc=exc)
         for dev in self._devs.values():
             self._poison_device(dev, exc)
 
@@ -210,14 +199,8 @@ class Bluefruit:
         if len(data) > MAX_COMMAND_SIZE:
             raise BluefruitError(f"Command too long ({len(data)}b): {line}")
 
-        while not self._ack_received.done():
-            logger.debug(f'Await ack of "{self._ack_expected}"')
-            await self._ack_received
-
         logger.debug(f"=> {line}")
         self._reader.done() and self._reader.result()
-        self._ack_received = _update_future(self._ack_received)
-        self._ack_expected = args[0]
         self._serial.write(data)
 
     def _on_serial_line(self, line: bytes):
@@ -232,17 +215,6 @@ class Bluefruit:
 
     def _on_ERR_message(self, message):
         logger.error(f"Bluefruit error: {message}")
-
-    def _on_ack_message(self, message):
-        ack = message["ack"]
-        if not self._ack_expected:
-            logger.warning(f'Unmatched "ack": {message}')
-            return
-
-        if ack != self._ack_expected:
-            logger.error(f'Ack received for "{ack}", expected "{ack_expected}"')
-        self._ack_expected = ""
-        self._ack_received = _update_future(self._ack_received, True)
 
     def _on_conn_message(self, message):
         dev = self._devs.get(message["conn"])
@@ -376,6 +348,7 @@ class Bluefruit:
         logger.debug(f"[{dev.addr}] {len(failed)} writes failed; 0 pending")
         for write in [w for w in failed if not w.done()]:
             write.set_exception(exc)
+            write.exception()  # Avoid warning if not received
 
 
 class _InputMessage(dict):
