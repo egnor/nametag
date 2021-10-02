@@ -53,7 +53,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--config", help="Nametag list")
 parser.add_argument("--debug", action="store_true")
 parser.add_argument("--ghost_id", type=int, required=True, help="Station ID")
-parser.add_argument("--port", default="/dev/ttyACM0")
+parser.add_argument("--port")
 args = parser.parse_args()
 if args.debug:
     nametag.logging_setup.enable_debug()

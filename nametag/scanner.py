@@ -88,8 +88,11 @@ async def scan_and_spawn(
             id_status = []
             for id, dev in id_dev:
                 delay_end = max(
-                    id_success_mono.get(id, 0) + options.success_delay,
-                    id_attempt_mono.get(id, 0) + options.attempt_delay,
+                    id_dict.get(id, -delay_opt) + delay_opt
+                    for id_dict, delay_opt in [
+                        (id_success_mono, options.success_delay),
+                        (id_attempt_mono, options.attempt_delay),
+                    ]
                 )
 
                 dev.fully_disconnected
@@ -145,7 +148,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--port", default="/dev/ttyACM0")
+    parser.add_argument("--port")
     args = parser.parse_args()
     if args.debug:
         nametag.logging_setup.enable_debug()
