@@ -19,8 +19,10 @@ class BluefruitError(Exception):
     pass
 
 
+BAUD = 250000
 MAX_SEND_SPACE = 64
-MAX_WRITES = 10
+MAX_CONNECTIONS = 5
+MAX_WRITES = 5
 MAX_SCAN_AGE = 60.0
 
 
@@ -57,14 +59,11 @@ class Bluefruit:
         self._handles: Dict[int, Device] = {}
         self._serial: _SerialPort = _SerialPort(port=port)
         self._reader: asyncio.Task = None
-        self._send_space: asyncio.Future = _set_future(MAX_SEND_SPACE)
-        self._command_ack: asyncio.Future = _set_future()
+        self._send_space: asyncio.Future = _set_future()
 
     async def __aenter__(self):
-        logger.debug("Starting serial reader task...")
         self._serial.__enter__()
         self._reader = asyncio.create_task(self._reader_task())
-        await self._send_command("show")  # Just in case.
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
@@ -99,7 +98,7 @@ class Bluefruit:
         if self.busy_connecting:
             b = ", ".join(self.busy_connecting)
             raise BluefruitError(f"Connect ({dev.addr}) while busy ({b})")
-        dev.handle = _set_future(use=dev.handle)
+        dev.handle = _set_future(update=dev.handle)
         self.busy_connecting.add(dev.addr)
         await self._send_command(f"conn {dev.addr}")
         try:
@@ -108,27 +107,27 @@ class Bluefruit:
             self.busy_connecting.remove(dev.addr)
 
     async def disconnect(self, dev: Device):
-        self.check_running()
         await asyncio.gather(*dev.writes, return_exceptions=True)  # Flush.
-
         try:
             handle = await dev.handle
         except BluefruitError:
             return  # Error on connect/disconnect, assume not connected
 
+        self.check_running()
         if handle >= 0:
-            dev.handle = _set_future(use=dev.handle)
+            dev.handle = _set_future(update=dev.handle)
             await self._send_command(f"disconn {handle}")
             await dev.handle
 
     async def write(self, dev: Device, attr: int, data: bytes):
-        self.check_running()
-        text = _to_text(data)
         while len(dev.writes) >= MAX_WRITES:
             await dev.writes[0]
+
+        self.check_running()
         if not dev.fully_connected:
             raise BluefruitError("Write to non-connected device")
         dev.writes.append(_set_future())
+        text = _to_text(data)
         await self._send_command(f"write {dev.handle.result()} {attr} {text}")
 
     async def read(self, dev: Device, attr: int) -> bytes:
@@ -137,7 +136,7 @@ class Bluefruit:
             await dev.writes[-1]  # Wait for writes so far to clear.
         if not dev.fully_connected:
             raise BluefruitError("Read from non-connected device")
-        dev.reads[attr] = _set_future(use=dev.reads.get(attr))
+        dev.reads[attr] = _set_future(update=dev.reads.get(attr))
         await self._send_command(f"read {dev.handle.result()} {attr}")
         return await dev.reads[attr]
 
@@ -145,7 +144,7 @@ class Bluefruit:
         self.check_running()
         if not dev.fully_connected:
             raise BluefruitError("Notify prepare for non-connected device")
-        future = dev.notify[attr] = _set_future(use=dev.notify.get(attr))
+        future = dev.notify[attr] = _set_future(update=dev.notify.get(attr))
         return future
 
     async def send_dummy(self, data: bytes, *, echo: bool = False):
@@ -154,7 +153,10 @@ class Bluefruit:
         await self._send_command(f"{command} {_to_text(data)}")
 
     async def _reader_task(self):
-        buffer = bytearray()
+        logger.debug("Starting serial reader task...")
+        buffer = bytearray(await self._serial.read())  # Wait for first read.
+        logger.debug("Receiving from device...");
+        self._send_space = _set_future(MAX_SEND_SPACE, update=self._send_space)
         while True:
             buffer.extend(await self._serial.read())
             lines = buffer.split(b"\n")
@@ -181,21 +183,24 @@ class Bluefruit:
             notify.exception()  # Avoid warning if not accessed
 
     def _poison_all(self, exc: Exception):
-        self._send_space = _set_future(exc=exc, use=self._send_space)
+        self._send_space = _set_future(exc=exc, update=self._send_space)
         self._send_space.exception()
         for dev in self.scan.values():
             self._poison_device(dev, exc)
 
     async def _send_command(self, line: str):
-        logger.debug(f"=> {line.strip()}")
-        data = (line + "\n").encode(encoding="L1")
-        self._command_ack = _set_future(use=self._command_ack)
+        data = (line + "\n").encode("L1")
         while data:
             space = await self._send_space
             send, data = data[:space], data[space:]
+            if data:
+                send_text = send.decode("L1").strip()
+                unsent_text = data.decode("L1").strip()
+                logger.debug(f"=> <{send_text}> // <{unsent_text}>")
+            else:
+                logger.debug(f"=> <{send.decode('L1').strip()}>")
             self._serial.write(send)
             self._send_space = _set_future((space - len(send)) or None)
-        await self._command_ack
 
     def _on_serial_line(self, line: bytes):
         message = _InputMessage(line)
@@ -210,9 +215,6 @@ class Bluefruit:
     def _on_ERR_message(self, message):
         logger.error(f"Bluefruit error: {message}")
 
-    def _on_ack_message(self, message):
-        self._command_ack = _set_future(message["ack"], use=self._command_ack)
-
     def _on_conn_message(self, message):
         dev = self.scan.get(message["conn"])
         handle = int(message["handle"])
@@ -221,7 +223,7 @@ class Bluefruit:
             return
 
         self._handles[handle] = dev
-        dev.handle = _set_future(handle, use=dev.handle)
+        dev.handle = _set_future(handle, update=dev.handle)
         dev.monotime = time.monotonic()
 
     def _on_conn_fail_message(self, message):
@@ -246,7 +248,7 @@ class Bluefruit:
             return
 
         dev.monotime = time.monotonic()
-        dev.handle = _set_future(-1, use=dev.handle)
+        dev.handle = _set_future(-1, update=dev.handle)
         self._poison_device(dev, BluefruitError(f"Disconnected: {message}"))
 
     def _on_disconn_fail_message(self, message):
@@ -256,7 +258,7 @@ class Bluefruit:
             return
 
         exc = BluefruitError(f"Disconnection failed: {message}")
-        dev.handle = _set_future(exc=exc, use=dev.handle)
+        dev.handle = _set_future(exc=exc, update=dev.handle)
 
     def _on_notify_message(self, message):
         dev = self._handles.get(int(message["conn"]))
@@ -267,7 +269,7 @@ class Bluefruit:
             return
 
         dev.monotime = time.monotonic()
-        dev.notify[attr] = _set_future(data, use=dev.notify.get(attr))
+        dev.notify[attr] = _set_future(data, update=dev.notify.get(attr))
 
     def _on_read_message(self, message):
         dev = self._handles.get(int(message["conn"]))
@@ -278,7 +280,7 @@ class Bluefruit:
             return
 
         dev.monotime = time.monotonic()
-        dev.reads[attr] = _set_future(data, use=dev.reads[attr])
+        dev.reads[attr] = _set_future(data, update=dev.reads[attr])
 
     def _on_read_fail_message(self, message):
         dev = self._handles.get(int(message["conn"]))
@@ -288,13 +290,13 @@ class Bluefruit:
             return
 
         exc = BluefruitError(f"[{dev.id}] Read failed: {message}")
-        dev.reads[attr] = _set_future(exc=exc, use=dev.reads[attr])
+        dev.reads[attr] = _set_future(exc=exc, update=dev.reads[attr])
 
     def _on_rx_message(self, message):
         count = int(message["rx"])
         old_space = self._send_space.result() if self._send_space.done() else 0
         new_space = min(count + old_space, MAX_SEND_SPACE)
-        self._send_space = _set_future(new_space, use=self._send_space)
+        self._send_space = _set_future(new_space, update=self._send_space)
 
     def _on_scan_message(self, message):
         addr = message["scan"]
@@ -351,7 +353,7 @@ class Bluefruit:
 
 class _InputMessage(dict):
     def __init__(self, data):
-        text = data.decode(encoding="L1").strip()
+        text = data.decode("L1").strip()
         values = logfmt.parser.parse_line(text)
         super().__init__((k, v) for k, v in values.items() if k.isidentifier())
 
@@ -361,17 +363,17 @@ class _InputMessage(dict):
 
 class _SerialPort:
     def __init__(self, *, port):
-        self.totals = collections.Counter()
         self._port = port
         self._serial: pyserial.Serial = None
         self._from_serial: asyncio.Future = None
         self._to_serial = None
         self._fileno = None
+        self.totals = collections.Counter()
 
     def __enter__(self):
         try:
             logger.debug(f"Opening serial ({self._port})")
-            self._serial = serial.Serial(self._port, timeout=0)
+            self._serial = serial.Serial(self._port, baudrate=BAUD, timeout=0)
             self._fileno = self._serial.fileno()
 
             loop = asyncio.get_running_loop()
@@ -422,7 +424,7 @@ class _SerialPort:
             asyncio.get_running_loop().remove_reader(fileno)
             exc = BluefruitError("Serial read failed")
             exc.__cause__ = os_error
-            self._from_serial = _set_future(exc=exc, use=self._from_serial)
+            self._from_serial = _set_future(exc=exc, update=self._from_serial)
 
     def _on_writable(self, fileno):
         try:
@@ -433,21 +435,21 @@ class _SerialPort:
             logger.warning(f"Serial write failed ({self._port}): {os_error}")
             exc = BluefruitError("Serial write failed")
             exc.__cause__ = os_error
-            self._from_serial = _set_future(exc=exc, use=self._from_serial)
+            self._from_serial = _set_future(exc=exc, update=self._from_serial)
             self._to_serial = b""
 
         if not self._to_serial:
             asyncio.get_running_loop().remove_writer(fileno)
 
 
-def _set_future(result=None, *, exc=None, use=None):
-    if use is None or use.done():
-        use = asyncio.get_running_loop().create_future()
+def _set_future(result=None, *, exc=None, update=None):
+    if update is None or update.done():
+        update = asyncio.get_running_loop().create_future()
     if result is not None:
-        use.set_result(result)
+        update.set_result(result)
     if exc is not None:
-        use.set_exception(exc)
-    return use
+        update.set_exception(exc)
+    return update
 
 
 def _to_binary(text: str) -> bytes:

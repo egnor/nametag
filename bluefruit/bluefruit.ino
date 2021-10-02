@@ -36,13 +36,14 @@ static uint8_t scan_data[BLE_GAP_SCAN_BUFFER_MAX];
 static const ble_data_t scan_data_info = {scan_data, sizeof(scan_data)};
 static bool show_scan = true;
 
-char input_line[256];
-int line_size = 0;
-int rx_ack_size = 0;
+static char input_line[256];
+static int line_size = 0;
+static int rx_ack_count = 0;
+static uint32_t last_data_millis = 0;
 static uint32_t next_status_millis = 0;
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(250000);
   while (!Serial) {
     digitalWrite(LED_BUILTIN, (millis() % 500) < 50);
     delay(10);
@@ -68,15 +69,17 @@ static void input_poll() {
       sd_ble_gap_disconnect(h, BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
     }
     line_size = 0;
-    rx_ack_size = 0;
+    rx_ack_count = 0;
     delay(10);
   }
 
-  digitalWrite(LED_BUILTIN, (millis() % 1000) < 500);
+  const uint32_t now = millis();
+  digitalWrite(LED_BUILTIN, (now % 1000) < 500);
 
   while (Serial.available()) {
     const char ch = Serial.read(); 
-    ++rx_ack_size;
+    ++rx_ack_count;
+    last_data_millis = now;
     if (ch == '\r' or ch == '\n') {
       input_line[line_size] = '\0';
       on_input_line(input_line);
@@ -91,9 +94,9 @@ static void input_poll() {
     }
   }
 
-  if (rx_ack_size >= 64) {
-    Serial.printf("rx=%d\n", rx_ack_size);
-    rx_ack_size = 0;
+  if (rx_ack_count >= 32 && now > last_data_millis + 2) {
+    Serial.printf("rx=%d\n", rx_ack_count);
+    rx_ack_count = 0;
   }
 }
 
@@ -122,7 +125,6 @@ static void on_input_line(char *line) {
     Serial.printf("*** ERR=input command=\"%s\"", command);
     Serial.println();
   }
-  Serial.printf("ack=%s\n", command);
 }
 
 static void on_conn_command(char *args) {
@@ -285,14 +287,17 @@ static void on_write_command(char *args) {
 
 
 static void bluetooth_setup() {
+#ifdef USE_TINYUSB
   // Disable TinyUSB peripheral event handlers (needed by SD).
   nrfx_power_usbevt_disable();
   nrfx_power_usbevt_uninit();
   nrfx_power_uninit();
+#endif
 
   // Default RC clock is good for the Circuit Playground Bluefruit.
   sd_softdevice_enable(nullptr, on_bt_fault);
 
+#ifdef USE_TINYUSB
   // Enable TinyUSB *soft device* event handlers passed through.
   sd_power_usbdetected_enable(true);
   sd_power_usbpwrrdy_enable(true);
@@ -304,6 +309,7 @@ static void bluetooth_setup() {
   if ((usb_reg & POWER_USBREGSTATUS_OUTPUTRDY_Msk) && !NRF_USBD->USBPULLUP) {
     tusb_hal_nrf_power_event(NRFX_POWER_USB_EVT_READY);
   }
+#endif
 
   extern const uint32_t __data_start__[];  // Start of app RAM
   const uint32_t app_ram_base = (uint32_t) __data_start__;
@@ -311,8 +317,8 @@ static void bluetooth_setup() {
     .gap_cfg = {
       .role_count_cfg = {
         .periph_role_count = 0,
-        .central_role_count = 10,
-        .central_sec_count = 1
+        .central_role_count = 5,
+        .central_sec_count = 0
       }
     }
   };
@@ -327,7 +333,7 @@ static void bluetooth_setup() {
       .conn_cfg_tag = 1,
       .params = {
         .gap_conn_cfg = {
-          .conn_count = 10,
+          .conn_count = 5,
           .event_length = BLE_GAP_EVENT_LENGTH_DEFAULT
         }
       }
@@ -344,7 +350,7 @@ static void bluetooth_setup() {
       .conn_cfg_tag = 1,
       .params = {
         .gattc_conn_cfg = {
-          .write_cmd_tx_queue_size = 10
+          .write_cmd_tx_queue_size = 5
         }
       }
     }
@@ -357,18 +363,24 @@ static void bluetooth_setup() {
 
   uint32_t app_ram_needed = app_ram_base;
   const auto enable_err = sd_ble_enable(&app_ram_needed);
-  if (enable_err == NRF_ERROR_NO_MEM) {
-    Serial.printf(
-        "*** ERR=sd_ble_enable code=NO_MEM alloc=0x%x, needed=0x%x\n",
-        app_ram_base, app_ram_needed);
-    return;
-  } else if (enable_err != NRF_SUCCESS) {
-    Serial.printf("*** ERR=sd_ble_enable code=0x%x\n", enable_err);
-    return;
+  if (enable_err != NRF_SUCCESS) {
+    if (enable_err == NRF_ERROR_NO_MEM) {
+      Serial.printf(
+          "*** ERR=sd_ble_enable code=NO_MEM alloc=0x%x, needed=0x%x\n",
+          app_ram_base, app_ram_needed);
+    } else {
+      Serial.printf("*** ERR=sd_ble_enable code=0x%x\n", enable_err);
+    }
+
+    while (true) {
+      const int m500 = millis() % 500;  // Two-blink for enable error.
+      digitalWrite(LED_BUILTIN, m500 < 50 || (m500 > 100 && m500 < 150));
+      delay(10);
+    }
   }
 
   const auto power_err = sd_ble_gap_tx_power_set(
-      BLE_GAP_TX_POWER_ROLE_SCAN_INIT, 0, +8);
+      BLE_GAP_TX_POWER_ROLE_SCAN_INIT, 0, +4);
   if (power_err != NRF_SUCCESS) {
     Serial.printf("*** ERR=sd_ble_gap_tx_power_set code=0x%x\n", power_err);
   }
@@ -385,6 +397,7 @@ static void bluetooth_poll() {
       break;
     }
 
+#ifdef USE_TINYUSB
     switch (sd_event_id) {
       case NRF_EVT_POWER_USB_DETECTED:
         tusb_hal_nrf_power_event(NRFX_POWER_USB_EVT_DETECTED);
@@ -396,6 +409,7 @@ static void bluetooth_poll() {
         tusb_hal_nrf_power_event(NRFX_POWER_USB_EVT_REMOVED);
         break;
     }
+#endif
   }
 
   constexpr int max_event_size = BLE_EVT_LEN_MAX(BLE_GATT_ATT_MTU_DEFAULT);
@@ -647,8 +661,8 @@ static void on_bt_fault(uint32_t id, uint32_t pc, uint32_t info) {
 
   // rapid blink for softdevice fault.
   while (true) {
-    digitalToggle(LED_BUILTIN);
-    delay(50);
+    digitalWrite(LED_BUILTIN, (millis() % 100) < 50);
+    delay(10);
   }
 }
 

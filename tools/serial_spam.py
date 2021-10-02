@@ -7,12 +7,13 @@ import serial  # type: ignore
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--port", default="/dev/ttyACM0")
+parser.add_argument("--baud", type=int, default=115200)
 parser.add_argument("--bps", type=float, default=1000000)
 parser.add_argument("--chunk", type=int, default=128)
 
 args = parser.parse_args()
 
-with serial.Serial(args.port, timeout=0) as serial:
+with serial.Serial(args.port, baudrate=args.baud, timeout=0) as serial:
     start_mono = time.monotonic()
     rx_total = tx_total = 0
     next_status = 0.0
