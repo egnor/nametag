@@ -24,7 +24,7 @@ TEAM_EMOJIS = [
 
 def load_and_pad(image_path: str, spacing: int):
     print(f"Loading: {image_path} (pad={spacing})")
-    art_dir = Path(__file__).parent.parent / "art"
+    art_dir = Path(__file__).resolve().parent.parent / "art"
     with PIL.Image.open(art_dir / image_path) as loaded_image:
         padded_image = PIL.Image.new("1", (loaded_image.size[0] + spacing, 12))
         padded_image.paste(loaded_image, box=(0, 0) + loaded_image.size)

@@ -6,7 +6,7 @@ from pathlib import Path
 from subprocess import check_call
 from typing import List
 
-os.chdir(str(Path(__file__).parent.parent))
+os.chdir(str(Path(__file__).resolve().parent.parent))
 
 
 def run(*args):

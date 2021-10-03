@@ -4,7 +4,8 @@ from typing import IO, Optional
 
 import PIL.Image  # type: ignore
 
-sys.path.append(str(Path(__file__).parent.parent / "external" / "py_aseprite"))
+source_dir = Path(__file__).resolve().parent.parent
+sys.path.append(str(source_dir / "external" / "py_aseprite"))
 import aseprite  # type: ignore
 
 

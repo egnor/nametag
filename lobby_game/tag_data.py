@@ -55,8 +55,9 @@ async def write_state(*, tag: nametag.protocol.Nametag, state: TagState):
 
 
 def load_configs(filename: Optional[str] = None) -> Dict[str, TagConfig]:
+    default_filename = Path(__file__).resolve().parent / "nametags.toml"
     toml_converter = cattr.preconf.tomlkit.make_converter()
-    toml_data = toml.load(filename or (Path(__file__).parent / "nametags.toml"))
+    toml_data = toml.load(filename or default_filename)
     return {
         id: toml_converter.structure({"id": id, **value}, TagConfig)
         for id, value in toml_data.items()

@@ -6,7 +6,7 @@ import platform
 from pathlib import Path
 from subprocess import run
 
-source_dir = Path(__file__).parent
+source_dir = Path(__file__).resolve().parent
 arduino_dir = source_dir / "work"
 bin_dir = source_dir.parent / "external" / "arduino"
 cli_bin = bin_dir / f"arduino-cli-{platform.system()}-{platform.machine()}"

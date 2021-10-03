@@ -10,7 +10,7 @@ import lobby_game.tag_data
 import nametag.aseprite_loader
 import nametag.protocol
 
-art_dir = Path(__file__).parent.parent / "art"
+art_dir = Path(__file__).resolve().parent.parent / "art"
 lobby_dir = art_dir / "lobby"
 image_cache: Dict[Path, PIL.Image.Image] = {}
 
