@@ -4,6 +4,7 @@ from typing import List
 
 import PIL.Image  # type: ignore
 
+import lobby_game.render_game
 import lobby_game.tag_data
 import nametag.aseprite_loader
 import nametag.protocol
@@ -61,4 +62,4 @@ async def render(*, team: int, tag: nametag.protocol.Nametag):
     await tag.set_speed(192)
     await tag.set_mode(2)
     await tag.show_glyphs(glyphs)
-    await lobby_game.tag_data.write_state(tag=tag, state=state)
+    await lobby_game.render_game.write_state(tag=tag, state=state)

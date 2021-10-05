@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Dict
 
 import lobby_game.render_emoji_teams
+import lobby_game.render_game
 import lobby_game.tag_data
 import nametag.bluefruit
 import nametag.logging_setup
@@ -25,7 +26,7 @@ async def check_tag(
         return
 
     logging.info(f"{config} Connected, reading state stash...")
-    state = await lobby_game.tag_data.read_state(tag)
+    state = await lobby_game.render_game.read_state(tag)
     if not state:
         logging.info(f"{config} No valid state stash, updating...")
     elif state.phase != b"EMO":

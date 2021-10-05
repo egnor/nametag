@@ -27,13 +27,13 @@ async def check_tag(
         return
 
     logging.info(f"{config} Connected, reading state stash...")
-    state = await lobby_game.tag_data.read_state(tag)
+    state = await lobby_game.render_game.read_state(tag)
     content = lobby_game.game_logic.content_for_tag(
         ghost_id=ghost_id, config=config, state=state
     )
 
     if content:
-        await lobby_game.render_game.render(content=content, tag=tag)
+        await lobby_game.render_game.render_content(content=content, tag=tag)
         logging.info(f"{config} Done sending, disconnecting...")
     return True
 

@@ -1,23 +1,21 @@
 import struct
 from pathlib import Path
-from typing import Dict, Iterable, Optional
+from typing import Dict, Iterable, List, Optional
 
 import attr
 import cattr
 import cattr.preconf.tomlkit
 import toml
 
-import nametag.protocol
 
-
-@attr.define
+@attr.frozen
 class TagState:
     phase: bytes
     number: int = 0  # 16 bit signed
     string: bytes = b""  # Up to 12 bytes
 
 
-@attr.define
+@attr.frozen
 class TagConfig:
     id: str
     team: int = 0
@@ -36,22 +34,21 @@ class TagConfig:
         )
 
 
+@attr.define
+class DisplayScene:
+    image_name: Optional[str] = None
+    text: Optional[str] = None
+    bold: bool = False
+    blink: bool = False
+
+
+@attr.define
+class DisplayContent:
+    new_state: TagState
+    scenes: List[DisplayScene]
+
+
 _state_struct = struct.Struct("<4ph")
-
-
-async def read_state(tag: nametag.protocol.Nametag) -> Optional[TagState]:
-    stash = await tag.read_stash()
-    if stash and len(stash) >= _state_struct.size:
-        fixed, tail = stash[: _state_struct.size], stash[_state_struct.size :]
-        phase, number = _state_struct.unpack(fixed)
-        return TagState(phase=phase, number=number, string=tail)
-    return None  # No/invalid stashed data.
-
-
-async def write_state(*, tag: nametag.protocol.Nametag, state: TagState):
-    await tag.write_stash(
-        _state_struct.pack(state.phase, state.number) + state.string
-    )
 
 
 def load_configs(filename: Optional[str] = None) -> Dict[str, TagConfig]:

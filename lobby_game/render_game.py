@@ -1,4 +1,5 @@
 import logging
+import struct
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -14,7 +15,6 @@ art_dir = Path(__file__).resolve().parent.parent / "art"
 lobby_dir = art_dir / "lobby"
 image_cache: Dict[Path, PIL.Image.Image] = {}
 
-
 KERNING = {
     ('"', "A"): -1,
     ('"', "J"): -1,
@@ -24,6 +24,8 @@ KERNING = {
     ("T", "A"): -1,
     ("T", "J"): -1,
 }
+
+STATE_STRUCT = struct.Struct("<4ph")
 
 
 def get_image(path: Path) -> PIL.Image.Image:
@@ -36,88 +38,103 @@ def get_image(path: Path) -> PIL.Image.Image:
     return image
 
 
-def make_image(frame_path: Path, font_dir: Path, text: str) -> PIL.Image.Image:
-    frame = get_image(frame_path)
+def add_text(
+    image: PIL.Image.Image, font_dir: Path, text: str
+) -> PIL.Image.Image:
     glyphs = [get_image(font_dir / (ch + ".ase")) for ch in text]
     spacing = list(1 + KERNING.get(ab, 0) for ab in zip(text[:-1], text[1:]))
 
     text_w = sum(g.size[0] for g in glyphs) + sum(spacing)
     text_h = max((g.size[1] for g in glyphs), default=0)
-    if text_w > frame.size[0] or text_h > frame.size[1]:
+    if text_w > image.size[0] or text_h > image.size[1]:
         raise ValueError(
             f'Text "{text}" ({text_w}x{text_h}) '
-            f"doesn't fit frame ({frame.size[0]}x{frame.size[1]}): {frame_path}"
+            f"doesn't fit image ({image.size[0]}x{image.size[1]})"
         )
 
-    cropped = frame.crop((0, frame.size[1] - text_h) + frame.size)
+    cropped = image.crop((0, image.size[1] - text_h) + image.size)
     proj_x, proj_y = cropped.getprojection()
     gap_x = max((i + 1 for i, v in enumerate(proj_x) if v), default=0)
-    if text_w > frame.size[0] - gap_x:
+    if text_w > image.size[0] - gap_x:
         raise ValueError(
             f'Text "{text}" ({text_w}x{text_h}) '
-            f"doesn't fit blank ({gap_x},{frame.size[1] - text_h})-"
-            f"({frame.size[0]},{frame.size[1]}): {frame_path}"
+            f"doesn't fit blank ({gap_x},{image.size[1] - text_h})-"
+            f"({image.size[0]},{image.size[1]})"
         )
 
-    left_x = (gap_x + frame.size[0] - text_w + 1) // 2
-    pasted = frame.copy()
+    left_x = (gap_x + image.size[0] - text_w + 1) // 2
+    pasted = image.copy()
     for glyph, space_after in zip(glyphs, spacing + [0]):
-        pasted.paste(glyph, box=(left_x, frame.size[1] - text_h))
+        pasted.paste(glyph, box=(left_x, image.size[1] - text_h))
         left_x += glyph.size[0] + space_after
     return pasted
 
 
-def make_frames(
-    content: lobby_game.game_logic.DisplayContent,
+def scene_frames(
+    scene: lobby_game.tag_data.DisplayScene,
 ) -> List[PIL.Image.Image]:
     frames: List[PIL.Image.Image] = []
     blank_image = PIL.Image.new("1", (48, 12))
 
-    if content.ghost_id and content.ghost_action:
-        frame_name = f"ghost-{content.ghost_id}-{content.ghost_action}.ase"
-        ghost_image = make_image(
-            frame_path=lobby_dir / frame_name,
-            font_dir=art_dir / "font",
-            text=content.ghost_text,
-        )
+    image_path = scene.image_name and (lobby_dir / f"{scene.image_name}.ase")
+    base_image = get_image(image_path) if image_path else blank_image
+    if scene.text:
+        font_dir = art_dir / ("font-bold" if scene.bold else "font")
+        image = add_text(image=base_image, font_dir=font_dir, text=scene.text)
+    else:
+        image = base_image
 
-        frames.append(ghost_image)
-        frames.append(ghost_image)
-        frames.append(ghost_image)
-        frames.append(blank_image)
+    if scene.blink:
+        frames.append(base_image)
+        frames.append(image)
+        frames.append(base_image)
+        frames.append(image)
+        frames.append(base_image)
+        frames.append(image)
+        frames.append(image)
+        frames.append(image)
+        frames.append(image)
+    else:
+        frames.append(image)
+        frames.append(image)
+        frames.append(image)
 
-    title_blank_image, status_text_image = [
-        make_image(
-            frame_path=lobby_dir / f"title-{content.status_title}.ase",
-            font_dir=art_dir / "font-bold",
-            text=word,
-        )
-        for word in ("", content.status_text)
-    ]
-
-    frames.append(title_blank_image)
-    frames.append(status_text_image)
-    frames.append(title_blank_image)
-    frames.append(status_text_image)
-    frames.append(title_blank_image)
-    frames.append(status_text_image)
-    frames.append(status_text_image)
-    frames.append(status_text_image)
-    frames.append(status_text_image)
     frames.append(blank_image)
     return frames
 
 
-async def render(
+async def read_state(
+    tag: nametag.protocol.Nametag,
+) -> Optional[lobby_game.tag_data.TagState]:
+    stash = await tag.read_stash()
+    if stash and len(stash) >= STATE_STRUCT.size:
+        fixed, end = stash[: STATE_STRUCT.size], stash[STATE_STRUCT.size :]
+        phase, num = STATE_STRUCT.unpack(fixed)
+        return lobby_game.tag_data.TagState(phase=phase, number=num, string=end)
+    return None  # No/invalid stashed data.
+
+
+async def write_state(
+    *, tag: nametag.protocol.Nametag, state: lobby_game.tag_data.TagState
+):
+    await tag.write_stash(
+        STATE_STRUCT.pack(state.phase, state.number) + state.string
+    )
+
+
+async def render_content(
     *,
-    content: lobby_game.game_logic.DisplayContent,
+    content: lobby_game.tag_data.DisplayContent,
     tag: nametag.protocol.Nametag,
 ):
-    frames = make_frames(content)
+    frames = []
+    for scene in content.scenes:
+        frames.extend(scene_frames(scene))
+
     await tag.set_brightness(255)
     await tag.show_frames(frames, msec=500)
     if content.new_state:
-        await lobby_game.tag_data.write_state(tag=tag, state=content.new_state)
+        await write_state(tag=tag, state=content.new_state)
 
 
 if __name__ == "__main__":  # For testing
@@ -126,44 +143,32 @@ if __name__ == "__main__":  # For testing
     import nametag.logging_setup
 
     parser = argparse.ArgumentParser()
-    ig = parser.add_argument_group("Write frame image")
-    ig.add_argument("--frame", type=Path, default=lobby_dir / "title-start.ase")
-    ig.add_argument("--text", default='"HELLO"')
-    ig.add_argument("--font", type=Path, default=art_dir / "font-bold")
-    ig.add_argument("--save_image", type=Path)
-
-    cg = parser.add_argument_group("Write animation")
-    cg.add_argument("--ghost_id", type=int, default=1)
-    cg.add_argument("--ghost_action", default="say")
-    cg.add_argument("--ghost_text", default='"HELLO"')
-    cg.add_argument("--status_title", default="next")
-    cg.add_argument("--status_text", default='"WORLD"')
-    cg.add_argument("--save_animation", type=Path)
+    parser.add_argument("--save_image", type=Path, default="tmp.gif")
+    parser.add_argument(
+        "--frames",
+        type=str,
+        nargs="+",
+        default=["ghost-1-say+HELLO+bold+blink"],
+        help="List of imagename+TEXT[+bold][+blink]",
+    )
 
     args = parser.parse_args()
+    frames = []
+    for arg in args.frames:
+        parts = arg.split("+")
+        scene = lobby_game.tag_data.DisplayScene()
+        scene.image_name = "".join(parts[0:1])
+        scene.text = "".join(parts[1:2])
+        scene.bold = "bold" in parts[2:]
+        scene.blink = "blink" in parts[2:]
+        frames.extend(scene_frames(scene))
 
-    if not (args.save_image or args.save_animation):
-        parser.error("One of --save_image or --save_animation required")
-
-    if args.save_image:
-        image = make_image(args.frame, args.font, args.text)
-        image.save(args.save_image)
-
-    if args.save_animation:
-        content = lobby_game.game_logic.DisplayContent(
-            ghost_id=args.ghost_id,
-            ghost_action=args.ghost_action,
-            ghost_text=args.ghost_text,
-            status_title=args.status_title,
-            status_text=args.status_text,
-            new_state=lobby_game.tag_data.TagState(phase=b"GAM"),
-        )
-
-        frames = [f.convert("P") for f in make_frames(content)]
-        frames[0].save(
-            args.save_animation,
-            save_all=True,
-            append_images=frames[1:],
-            loop=0,
-            duration=500,
-        )
+    frames = [f.convert("P") for f in frames]
+    frames[0].save(
+        args.save_image,
+        save_all=True,
+        append_images=frames[1:],
+        loop=0,
+        duration=500,
+    )
+    print(f"Wrote image: {args.save_image}")
