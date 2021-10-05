@@ -39,11 +39,12 @@ static bool show_scan = true;
 static char input_line[256];
 static int line_size = 0;
 static uint32_t next_status_millis = 0;
+static uint32_t blue_led_millis = 0;
 
 void setup() {
   Serial.begin(115200);
   while (!Serial) {
-    digitalWrite(LED_BUILTIN, (millis() % 500) < 50);
+    digitalWrite(LED_RED, (millis() % 500) < 50);
     delay(10);
   }
   bluetooth_setup();
@@ -62,7 +63,7 @@ void loop() {
 
 static void input_poll() {
   while (!Serial) {
-    digitalWrite(LED_BUILTIN, (millis() % 500) < 450);
+    digitalWrite(LED_RED, (millis() % 500) < 450);
     for (int h = 0; h < 20; ++h) {
       sd_ble_gap_disconnect(h, BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
     }
@@ -70,7 +71,7 @@ static void input_poll() {
     delay(10);
   }
 
-  digitalWrite(LED_BUILTIN, (millis() % 1000) < 500);
+  digitalWrite(LED_RED, (millis() % 1000) < 500);
 
   while (Serial.available()) {
     const char ch = Serial.read(); 
@@ -362,7 +363,7 @@ static void bluetooth_setup() {
 
     while (true) {
       const int m500 = millis() % 500;  // Two-blink for enable error.
-      digitalWrite(LED_BUILTIN, m500 < 50 || (m500 > 100 && m500 < 150));
+      digitalWrite(LED_RED, m500 < 50 || (m500 > 100 && m500 < 150));
       delay(10);
     }
   }
@@ -400,6 +401,7 @@ static void bluetooth_poll() {
 #endif
   }
 
+  const uint32_t now = millis();
   constexpr int max_event_size = BLE_EVT_LEN_MAX(BLE_GATT_ATT_MTU_DEFAULT);
   uint8_t event_buffer[max_event_size];
   while (true) {
@@ -419,12 +421,14 @@ static void bluetooth_poll() {
 
     const ble_evt_t *event = (const ble_evt_t *) event_buffer;
     const auto handle = event->evt.common_evt.conn_handle;
+    bool blink_blue = false;
     switch (event->header.evt_id) {
       case BLE_GAP_EVT_ADV_REPORT:
         on_bt_scan_report(&event->evt.gap_evt.params.adv_report);
         break;
       case BLE_GAP_EVT_CONNECTED:
         on_bt_connect(handle, &event->evt.gap_evt.params.connected);
+        blink_blue = true;
         break;
       case BLE_GAP_EVT_DISCONNECTED:
         on_bt_disconn(handle, &event->evt.gap_evt.params.disconnected);
@@ -438,18 +442,27 @@ static void bluetooth_poll() {
         break;
       case BLE_GATTC_EVT_READ_RSP:
         on_bt_read_reply(&event->evt.gattc_evt);
+        blink_blue = true;
         break;
       case BLE_GATTC_EVT_WRITE_CMD_TX_COMPLETE:
         on_bt_write_done(&event->evt.gattc_evt);
+        blink_blue = true;
         break;
       case BLE_GATTC_EVT_HVX:
         on_bt_notify(&event->evt.gattc_evt);
+        blink_blue = true;
         break;
       default:
         Serial.printf("ble_event=%d conn=%d\n", event->header.evt_id, handle);
         break;
     }
+
+    if (blink_blue) {
+      blue_led_millis = now + 100;
+    }
   }
+
+  digitalWrite(LED_BLUE, (blue_led_millis > now));
 
   static const ble_gap_scan_params_t scan_params = {
     .interval = 23,
@@ -649,7 +662,7 @@ static void on_bt_fault(uint32_t id, uint32_t pc, uint32_t info) {
 
   // rapid blink for softdevice fault.
   while (true) {
-    digitalWrite(LED_BUILTIN, (millis() % 100) < 50);
+    digitalWrite(LED_RED, (millis() % 100) < 50);
     delay(10);
   }
 }

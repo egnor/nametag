@@ -1,18 +1,16 @@
 import logging
 import struct
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import attr
 import PIL.Image  # type: ignore
 
-import lobby_game.game_logic
-import lobby_game.tag_data
-import nametag.aseprite_loader
-import nametag.protocol
+from lobby_game import stash_state, tag_data
+from nametag import aseprite_loader, protocol
 
 art_dir = Path(__file__).resolve().parent.parent / "art"
-lobby_dir = art_dir / "lobby"
+game_dir = art_dir / "lobby-game"
 image_cache: Dict[Path, PIL.Image.Image] = {}
 
 KERNING = {
@@ -26,6 +24,8 @@ KERNING = {
 }
 
 STATE_STRUCT = struct.Struct("<4ph")
+
+state_memory: Dict[str, tag_data.TagState] = {}
 
 
 def get_image(path: Path) -> PIL.Image.Image:
@@ -70,71 +70,49 @@ def add_text(
     return pasted
 
 
-def scene_frames(
-    scene: lobby_game.tag_data.DisplayScene,
+def content_frames(
+    content: tag_data.DisplayContent,
 ) -> List[PIL.Image.Image]:
     frames: List[PIL.Image.Image] = []
     blank_image = PIL.Image.new("1", (48, 12))
+    for scene in content.scenes:
+        image_path = scene.image_name and (game_dir / f"{scene.image_name}.ase")
+        base_image = get_image(image_path) if image_path else blank_image
+        if scene.text:
+            font = art_dir / ("font-bold" if scene.bold else "font")
+            image = add_text(image=base_image, font_dir=font, text=scene.text)
+        else:
+            image = base_image
 
-    image_path = scene.image_name and (lobby_dir / f"{scene.image_name}.ase")
-    base_image = get_image(image_path) if image_path else blank_image
-    if scene.text:
-        font_dir = art_dir / ("font-bold" if scene.bold else "font")
-        image = add_text(image=base_image, font_dir=font_dir, text=scene.text)
-    else:
-        image = base_image
+        if scene.blink:
+            frames.append(base_image)
+            frames.append(image)
+            frames.append(base_image)
+            frames.append(image)
+            frames.append(base_image)
+            frames.append(image)
+            frames.append(image)
+            frames.append(image)
+            frames.append(image)
+        else:
+            frames.append(image)
+            frames.append(image)
+            frames.append(image)
 
-    if scene.blink:
-        frames.append(base_image)
-        frames.append(image)
-        frames.append(base_image)
-        frames.append(image)
-        frames.append(base_image)
-        frames.append(image)
-        frames.append(image)
-        frames.append(image)
-        frames.append(image)
-    else:
-        frames.append(image)
-        frames.append(image)
-        frames.append(image)
+        if len(content.scenes) > 1:
+            frames.append(blank_image)
 
-    frames.append(blank_image)
     return frames
-
-
-async def read_state(
-    tag: nametag.protocol.Nametag,
-) -> Optional[lobby_game.tag_data.TagState]:
-    stash = await tag.read_stash()
-    if stash and len(stash) >= STATE_STRUCT.size:
-        fixed, end = stash[: STATE_STRUCT.size], stash[STATE_STRUCT.size :]
-        phase, num = STATE_STRUCT.unpack(fixed)
-        return lobby_game.tag_data.TagState(phase=phase, number=num, string=end)
-    return None  # No/invalid stashed data.
-
-
-async def write_state(
-    *, tag: nametag.protocol.Nametag, state: lobby_game.tag_data.TagState
-):
-    await tag.write_stash(
-        STATE_STRUCT.pack(state.phase, state.number) + state.string
-    )
 
 
 async def render_content(
     *,
-    content: lobby_game.tag_data.DisplayContent,
-    tag: nametag.protocol.Nametag,
+    content: tag_data.DisplayContent,
+    tag: protocol.Nametag,
 ):
-    frames = []
-    for scene in content.scenes:
-        frames.extend(scene_frames(scene))
-
     await tag.set_brightness(255)
-    await tag.show_frames(frames, msec=500)
-    if content.new_state:
-        await write_state(tag=tag, state=content.new_state)
+    await tag.show_frames(content_frames(content), msec=500)
+    await stash_state.write(tag=tag, state=content.new_state)
 
 
 if __name__ == "__main__":  # For testing
@@ -153,17 +131,20 @@ if __name__ == "__main__":  # For testing
     )
 
     args = parser.parse_args()
-    frames = []
+    content = tag_data.DisplayContent(
+        new_state=tag_data.TagState(phase=b"TST"),
+        scenes=[],
+    )
     for arg in args.frames:
         parts = arg.split("+")
-        scene = lobby_game.tag_data.DisplayScene()
+        scene = tag_data.DisplayScene()
         scene.image_name = "".join(parts[0:1])
         scene.text = "".join(parts[1:2])
         scene.bold = "bold" in parts[2:]
         scene.blink = "blink" in parts[2:]
-        frames.extend(scene_frames(scene))
+        content.scenes.append(scene)
 
-    frames = [f.convert("P") for f in frames]
+    frames = [f.convert("P") for f in content_frames(content)]
     frames[0].save(
         args.save_image,
         save_all=True,

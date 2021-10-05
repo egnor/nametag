@@ -4,10 +4,8 @@ from typing import List
 
 import PIL.Image  # type: ignore
 
-import lobby_game.render_game
-import lobby_game.tag_data
-import nametag.aseprite_loader
-import nametag.protocol
+from lobby_game import stash_state, tag_data
+from nametag import aseprite_loader, protocol
 
 TEAM_EMOJIS = [
     ["sparkles", "moon", "thumbs_up"],  # puzzlewise *last*, use for team x0
@@ -38,16 +36,17 @@ loaded_emojis = {
 }
 
 loaded_logoteam = [
-    load_and_pad("lobby/lobby-logo.ase", 5),
-    load_and_pad("lobby/lobby-team.ase", 5),
+    load_and_pad("team-number/lobby-logo.ase", 5),
+    load_and_pad("team-number/word-team.ase", 5),
 ]
 
 loaded_digits = {
-    digit: load_and_pad(f"lobby/lobby-{digit}.ase", 2) for digit in range(0, 10)
+    digit: load_and_pad(f"team-number/digit-{digit}.ase", 2)
+    for digit in range(0, 10)
 }
 
 
-async def render(*, team: int, tag: nametag.protocol.Nametag):
+async def render(*, team: int, tag: protocol.Nametag):
     glyphs: List[PIL.Image.Image] = []
 
     glyphs = (
@@ -56,10 +55,10 @@ async def render(*, team: int, tag: nametag.protocol.Nametag):
         + [loaded_digits[int(d)] for d in str(team)]
     )
 
-    state = lobby_game.tag_data.TagState(b"EMO", number=team)
+    state = tag_data.TagState(b"EMO", number=team)
 
     await tag.set_brightness(255)
     await tag.set_speed(192)
     await tag.set_mode(2)
     await tag.show_glyphs(glyphs)
-    await lobby_game.render_game.write_state(tag=tag, state=state)
+    await stash_state.write(tag=tag, state=state)

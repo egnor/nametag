@@ -19,6 +19,10 @@ class BluefruitError(Exception):
     pass
 
 
+class PortError(BluefruitError):
+    pass
+
+
 DEFAULT_PORT = "/dev/ttyUSB0"
 BAUD = 115200
 MAX_COMMAND_SIZE = 80
@@ -63,7 +67,7 @@ class Bluefruit:
         self.totals = self._serial.totals
 
     async def __aenter__(self):
-        self._serial.__enter__()
+        await self._serial.__aenter__()
         self._reader = asyncio.create_task(self._reader_task())
         return self
 
@@ -72,13 +76,11 @@ class Bluefruit:
         eintro = " for error:" if einfo else "..."
         logger.debug(f"Stopping serial reader{eintro}", exc_info=einfo)
         self._reader.cancel()
-        self._serial.__exit__(exc_type, exc, tb)
+        await self._serial.__aexit__(exc_type, exc, tb)
         try:
             await self._reader
         except asyncio.CancelledError:
             logger.debug("Reader task cancelled")
-        except BluefruitError as exc:
-            raise BluefruitError("Reader task failed") from exc
         finally:
             self._poison_all(BluefruitError("Stopped"))
 
@@ -166,14 +168,20 @@ class Bluefruit:
 
     async def _reader_task(self):
         logger.debug("Starting serial reader task...")
-        buffer = bytearray(await self._serial.read())  # Wait for first read.
-        logger.debug("Receiving from device...")
+        first_line = True
+        buffer = bytearray()
         while True:
-            buffer.extend(await self._serial.read())
+            try:
+                data = await asyncio.wait_for(self._serial.read(), timeout=1.5)
+            except asyncio.TimeoutError as exc:
+                raise PortError("Adapter serial timeout") from exc
+            buffer.extend(data)
             lines = buffer.split(b"\n")
             buffer = lines.pop()
             for line in lines:
-                self._on_serial_line(line)
+                if not first_line:  # The first line may be partial.
+                    self._on_serial_line(line)
+                first_line = False
 
     def _poison_device(self, dev: Device, exc: Exception):
         if dev.handle and not dev.handle.done():
@@ -370,11 +378,17 @@ class _SerialPort:
         self._fileno = None
         self.totals = collections.Counter()
 
-    def __enter__(self):
+    async def __aenter__(self):
         try:
-            logger.debug(f"Opening serial ({self._port})")
-            self._serial = serial.Serial(self._port, baudrate=BAUD, timeout=0)
-            self._fileno = self._serial.fileno()
+            logger.debug(f"Opening adapter serial ({self._port})")
+            self._serial = serial.Serial(baudrate=BAUD, timeout=0)
+            self._serial.port = self._port
+            try:
+                self._serial.open()
+                self._fileno = self._serial.fileno()
+                self._serial.read(self._serial.in_waiting)  # Discard buffered
+            except (OSError, serial.serialutil.SerialException) as exc:
+                raise PortError("Adapter serial open failed") from exc
 
             loop = asyncio.get_running_loop()
             self._from_serial = loop.create_future()
@@ -382,18 +396,18 @@ class _SerialPort:
             loop.add_reader(self._fileno, self._on_readable, self._fileno)
             return self
         except Exception:
-            self.__exit__(None, None, None)
+            await self.__aexit__(None, None, None)
             raise
 
-    def __exit__(self, exc_type, exc, tb):
+    async def __aexit__(self, exc_type, exc, tb):
         if self._serial and self._serial.is_open:
             try:
-                logger.debug(f"Closing serial ({self._port})")
+                logger.debug(f"Closing adapter serial ({self._port})")
                 loop = asyncio.get_running_loop()
                 loop.remove_reader(self._fileno)
                 loop.remove_writer(self._fileno)
                 self._serial.close()
-            except OSError as exc:
+            except (OSError, serial.serialutil.SerialException) as exc:
                 logger.warning(f"Serial close failed ({self._port}): {exc}")
 
     async def read(self) -> bytearray:
@@ -419,10 +433,10 @@ class _SerialPort:
                 asyncio.get_running_loop().remove_reader(fileno)
             elif not self._from_serial.exception():
                 self._from_serial.result().extend(data)
-        except OSError as os_error:
+        except (OSError, serial.serialutil.SerialException) as os_error:
             logger.warning(f"Serial read failed ({self._port}): {os_error}")
             asyncio.get_running_loop().remove_reader(fileno)
-            exc = BluefruitError("Serial read failed")
+            exc = PortError("Adapter serial read failed")
             exc.__cause__ = os_error
             self._from_serial = _update_future(self._from_serial, exc=exc)
 
@@ -431,9 +445,9 @@ class _SerialPort:
             written = self._serial.write(self._to_serial)
             self._to_serial = self._to_serial[written:]
             self.totals["write"] += written
-        except OSError as os_error:
+        except (OSError, serial.serialutil.SerialException) as os_error:
             logger.warning(f"Serial write failed ({self._port}): {os_error}")
-            exc = BluefruitError("Serial write failed")
+            exc = PortError("Adapter serial write failed")
             exc.__cause__ = os_error
             self._from_serial = _update_future(self._from_serial, exc=exc)
             self._to_serial = b""

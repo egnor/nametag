@@ -13,7 +13,7 @@ import PIL.Image  # type: ignore
 import nametag.aseprite_loader
 import nametag.bluefruit
 import nametag.logging_setup
-from nametag.protocol import Nametag, id_if_nametag
+from nametag.protocol import Nametag
 
 
 async def send_to_nametag(tag: Nametag, args):
@@ -97,7 +97,7 @@ async def run(args):
             devs = {
                 id: dev
                 for dev in adapter.devices().values()
-                for id in [id_if_nametag(dev)]
+                for id in [Nametag.id_if_nametag(dev)]
                 if id
             }
 
@@ -129,7 +129,7 @@ async def run(args):
                     print("Done and disconnected.")
                     break
                 except nametag.bluefruit.BluefruitError:
-                    logger.error("*** Error", exc_info=True)
+                    logging.error("*** Error", exc_info=True)
                 print()
 
             await asyncio.sleep(0.1)

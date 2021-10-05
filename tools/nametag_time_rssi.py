@@ -33,16 +33,12 @@ async def update_rssi(tag: nametag.protocol.Nametag):
 
 
 async def run(args):
-    async with nametag.bluefruit.Bluefruit(port=args.port) as adapter:
-        options = nametag.scanner.ScannerOptions()
-        options.success_delay = 1.0
-        await nametag.scanner.scan_and_spawn(
-            adapter=adapter, runner=update_rssi, options=options
-        )
+    options = nametag.scanner.ScannerOptions()
+    options.success_delay = 1.0
+    await nametag.scanner.scan_and_spawn(runner=update_rssi, options=options)
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--port")
 parser.add_argument("--debug", action="store_true")
 parser.add_argument("--toggle_interval", type=float, default=10.0)
 args = parser.parse_args()

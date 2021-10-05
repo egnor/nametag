@@ -6,7 +6,7 @@ import operator
 import struct
 import time
 from functools import reduce
-from typing import Iterable, Optional
+from typing import Dict, Iterable, Optional
 
 import attr
 import crcmod  # type: ignore
@@ -21,15 +21,9 @@ class ProtocolError(BluefruitError):
     pass
 
 
-def id_if_nametag(dev: Device) -> Optional[str]:
-    if 0xFFF0 in dev.uuids and dev.mdata[6:8] == b"\xff\xff":
-        return dev.mdata[1::-1].hex().upper()
-    return None
-
-
 class Nametag:
     def __init__(self, *, adapter: Bluefruit, dev: Device):
-        tag_id = id_if_nametag(dev)
+        tag_id = Nametag.id_if_nametag(dev)
         if not tag_id:
             raise ValueError("Device ({dev.addr}) is not a Nametag")
         self.adapter = adapter
@@ -103,6 +97,8 @@ class Nametag:
             raise ValueError(f"Stash data too long ({len(data)}b)")
         header = struct.pack("BB", 0x80 | len(data), Nametag._stash_crc(data))
         await self.send_raw_packet(header + data)
+        await self.flush()  # Ensure stash is committed
+        stash_backup[self.id] = StashBackup(data, time.monotonic(), False)
 
     async def read_stash(self) -> Optional[bytes]:
         packet = await self.adapter.read(self.dev, 3)
@@ -110,14 +106,34 @@ class Nametag:
             size = packet[0] ^ 0x80
             data = packet[2 : 2 + size]
             if len(data) == size and packet[1] == Nametag._stash_crc(data):
+                monotime = time.monotonic()
+                stash_backup[self.id] = StashBackup(data, monotime, False)
                 return data
 
-        return None  # Invalid stash
+        backup = stash_backup.get(self.id)
+        if not backup:
+            logger.warning(f"[{self.id}] No stash (and no backup)")
+            return None
+
+        if not backup.active:
+            logger.warning(f"[{self.id}] No stash and backup inactive")
+            return None
+
+        age = time.monotonic() - backup.monotime
+        if age > 120:
+            logger.warning(f"[{self.id}] No stash and backup old ({age:.1f}s)")
+            return None
+
+        logger.warning(f"[{self.id}] No stash, using backup ({age:.1f}s old)")
+        return backup.data
 
     async def flush(self):
         await self.adapter.flush(self.dev)
 
     async def send_raw_packet(self, packet: bytes):
+        backup = stash_backup.get(self.id)
+        if backup:
+            backup.active = True  # Stash is now disrupted; enable backup.
         await self.adapter.write(self.dev, 3, packet)
 
     async def send_short_message(self, data: bytes, *, tag: int):
@@ -157,6 +173,12 @@ class Nametag:
                     raise ProtocolError("Bad reply {notify}, expected {expect}")
 
     @staticmethod
+    def id_if_nametag(dev: Device) -> Optional[str]:
+        if 0xFFF0 in dev.uuids and dev.mdata[6:8] == b"\xff\xff":
+            return dev.mdata[1::-1].hex().upper()
+        return None
+
+    @staticmethod
     def _encode(body: bytes, *, tag: int) -> bytes:
         def escape123(data: bytes) -> bytes:
             data = data.replace(b"\2", b"\2\6")
@@ -167,3 +189,13 @@ class Nametag:
         typed = struct.pack(">B", tag) + body
         sized_typed = struct.pack(">H", len(typed)) + typed
         return b"\1" + escape123(sized_typed) + b"\3"
+
+
+@attr.define
+class StashBackup:
+    data: bytes
+    monotime: float
+    active: bool
+
+
+stash_backup: Dict[str, StashBackup] = {}
