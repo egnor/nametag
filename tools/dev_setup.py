@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from subprocess import check_call, check_output
 
-os.chdir(str(Path(__file__).parent.parent))
+os.chdir(str(Path(__file__).resolve().parent.parent))
 startup_venv = os.environ.get("VIRTUAL_ENV")
 
 print("=== Update system packages (apt) ===")

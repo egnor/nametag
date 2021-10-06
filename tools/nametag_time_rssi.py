@@ -16,7 +16,7 @@ import nametag.logging_setup
 import nametag.protocol
 import nametag.scanner
 
-fonts_dir = Path(__file__).parent.parent / "external" / "fonts"
+fonts_dir = Path(__file__).resolve().parent.parent / "external" / "fonts"
 font_path = fonts_dir / "Spartan-Bold.ttf"
 loaded_font = PIL.ImageFont.truetype(str(font_path), 10)
 

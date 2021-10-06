@@ -20,7 +20,7 @@ translate = {
     "吃豆子": "pacman",
 }
 
-top_dir = Path(__file__).parent.parent
+top_dir = Path(__file__).resolve().parent.parent
 apk_path = top_dir / "apk" / "base.apk"
 print(f"=== Opening {apk_path} ===")
 with zipfile.ZipFile(apk_path) as apk_zip:
