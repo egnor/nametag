@@ -174,7 +174,7 @@ async def scan_and_spawn(
 if __name__ == "__main__":
     import argparse
 
-    import nametag.logging_setup
+    from nametag import logging_setup
 
     async def test_task(tag):
         print(f"  [{tag.id}] connected, reading...")
@@ -185,14 +185,11 @@ if __name__ == "__main__":
         await tag.write_stash(to_stash)
         print(f"  [{tag.id}] wrote, disconnecting...")
 
-    async def test_main(args):
-        await scan_and_spawn(runner=test_task)
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--port")
     args = parser.parse_args()
     if args.debug:
-        nametag.logging_setup.enable_debug()
+        logging_setup.enable_debug()
 
-    asyncio.run(test_main(args), debug=args.debug)
+    asyncio.run(scan_and_spawn(runner=test_task), debug=args.debug)

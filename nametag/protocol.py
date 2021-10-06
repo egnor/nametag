@@ -99,6 +99,7 @@ class Nametag:
         await self.send_raw_packet(header + data)
         await self.flush()  # Ensure stash is committed
         stash_backup[self.id] = StashBackup(data, time.monotonic(), False)
+        logger.debug(f"[{self.id}] Write stash: {data!r} (=> backup)")
 
     async def read_stash(self) -> Optional[bytes]:
         packet = await self.adapter.read(self.dev, 3)
@@ -108,6 +109,7 @@ class Nametag:
             if len(data) == size and packet[1] == Nametag._stash_crc(data):
                 monotime = time.monotonic()
                 stash_backup[self.id] = StashBackup(data, monotime, False)
+                logger.debug(f"[{self.id}] Read stash: {data!r} (=> backup)")
                 return data
 
         backup = stash_backup.get(self.id)
@@ -124,7 +126,10 @@ class Nametag:
             logger.warning(f"[{self.id}] No stash and backup old ({age:.1f}s)")
             return None
 
-        logger.warning(f"[{self.id}] No stash, using backup ({age:.1f}s old)")
+        logger.warning(
+            f"[{self.id}] No stash, using backup ({age:.1f}s old): "
+            f"{backup.data!r}"
+        )
         return backup.data
 
     async def flush(self):
@@ -132,7 +137,8 @@ class Nametag:
 
     async def send_raw_packet(self, packet: bytes):
         backup = stash_backup.get(self.id)
-        if backup:
+        if backup and not backup.active:
+            logger.debug(f"[{self.id}] Stash backup active: {backup.data!r}")
             backup.active = True  # Stash is now disrupted; enable backup.
         await self.adapter.write(self.dev, 3, packet)
 

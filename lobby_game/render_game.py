@@ -143,7 +143,7 @@ def render_to_file(
 if __name__ == "__main__":  # For testing
     import argparse
 
-    import nametag.logging_setup
+    from nametag import logging_setup
 
     parser = argparse.ArgumentParser()
     parser.add_argument(

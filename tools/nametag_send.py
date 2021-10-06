@@ -10,13 +10,10 @@ from typing import List, Tuple
 
 import PIL.Image  # type: ignore
 
-import nametag.aseprite_loader
-import nametag.bluefruit
-import nametag.logging_setup
-from nametag.protocol import Nametag
+from nametag import aseprite_loader, bluefruit, logging_setup, protocol
 
 
-async def send_to_nametag(tag: Nametag, args):
+async def send_to_nametag(tag: protocol.Nametag, args):
     if args.mode is not None:
         print(f"Setting mode: {args.mode}")
         await tag.set_mode(args.mode)
@@ -77,7 +74,7 @@ async def send_to_nametag(tag: Nametag, args):
     await tag.flush()
 
 
-async def talk_to_nametag(tag: Nametag, args):
+async def talk_to_nametag(tag: protocol.Nametag, args):
     print("Connected, reading data stash...")
     stash = await tag.read_stash()
     if stash:
@@ -90,14 +87,14 @@ async def talk_to_nametag(tag: Nametag, args):
 
 
 async def run(args):
-    async with nametag.bluefruit.Bluefruit(port=args.port) as adapter:
+    async with bluefruit.Bluefruit(port=args.port) as adapter:
         print("=== Finding nametag ===")
         next_print = 0.0
         while True:
             devs = {
                 id: dev
                 for dev in adapter.devices().values()
-                for id in [Nametag.id_if_nametag(dev)]
+                for id in [protocol.Nametag.id_if_nametag(dev)]
                 if id
             }
 
@@ -124,11 +121,11 @@ async def run(args):
                 id, dev = next(iter(matched.items()))
                 print(f"=== Connecting to nametag {id} ===")
                 try:
-                    async with Nametag(adapter=adapter, dev=dev) as tag:
-                        await talk_to_nametag(tag, args)
+                    async with protocol.Nametag(adapter=adapter, dev=dev) as t:
+                        await talk_to_nametag(t, args)
                     print("Done and disconnected.")
                     break
-                except nametag.bluefruit.BluefruitError:
+                except bluefruit.BluefruitError:
                     logging.error("*** Error", exc_info=True)
                 print()
 
@@ -158,6 +155,6 @@ send_group.add_argument("--timeout", type=float, default=60.0)
 
 args = parser.parse_args()
 if args.debug:
-    nametag.logging_setup.enable_debug()
+    logging_setup.enable_debug()
 
 asyncio.run(run(args), debug=args.debug)

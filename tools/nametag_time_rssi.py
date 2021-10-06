@@ -11,17 +11,14 @@ import PIL.Image  # type: ignore
 import PIL.ImageDraw  # type: ignore
 import PIL.ImageFont  # type: ignore
 
-import nametag.bluefruit
-import nametag.logging_setup
-import nametag.protocol
-import nametag.scanner
+from nametag import logging_setup, protocol, scanner
 
 fonts_dir = Path(__file__).resolve().parent.parent / "external" / "fonts"
 font_path = fonts_dir / "Spartan-Bold.ttf"
 loaded_font = PIL.ImageFont.truetype(str(font_path), 10)
 
 
-async def update_rssi(tag: nametag.protocol.Nametag):
+async def update_rssi(tag: protocol.Nametag):
     image = PIL.Image.new("1", (48, 12))
     draw = PIL.ImageDraw.Draw(image)
     center_xy = (image.size[0] / 2, image.size[1] / 2)
@@ -32,17 +29,13 @@ async def update_rssi(tag: nametag.protocol.Nametag):
     await tag.show_frames([image], msec=1000)
 
 
-async def run(args):
-    options = nametag.scanner.ScannerOptions()
-    options.success_delay = 1.0
-    await nametag.scanner.scan_and_spawn(runner=update_rssi, options=options)
-
-
 parser = argparse.ArgumentParser()
 parser.add_argument("--debug", action="store_true")
 parser.add_argument("--toggle_interval", type=float, default=10.0)
 args = parser.parse_args()
 if args.debug:
-    nametag.logging_setup.enable_debug()
+    logging_setup.enable_debug()
 
-asyncio.run(run(args), debug=args.debug)
+options = scanner.ScannerOptions(success_delay=1.0)
+scan_coro = scanner.scan_and_spawn(runner=update_rssi, options=options)
+asyncio.run(scan_coro, debug=args.debug)

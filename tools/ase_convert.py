@@ -4,8 +4,7 @@ import argparse
 
 import PIL.Image  # type: ignore
 
-import nametag.aseprite_loader
-import nametag.logging_setup
+from nametag import aseprite_loader, logging_setup
 
 parser = argparse.ArgumentParser()
 parser.add_argument("input_file", help="File to convert")

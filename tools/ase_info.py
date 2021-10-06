@@ -3,8 +3,7 @@
 import argparse
 from typing import Dict, List
 
-import nametag.aseprite_loader
-import nametag.logging_setup
+from nametag import aseprite_loader, logging_setup
 
 # must import after aseprite_import
 import aseprite  # type: ignore  # isort: skip

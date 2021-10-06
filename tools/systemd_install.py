@@ -27,7 +27,7 @@ subprocess.run(
     input=UNIT.replace("@DIR@", str(source_dir)),
     stdout=subprocess.DEVNULL,
     encoding="utf8",
-    check=True
+    check=True,
 )
 
 parser = argparse.ArgumentParser()

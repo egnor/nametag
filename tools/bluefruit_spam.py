@@ -5,12 +5,11 @@ import asyncio
 import logging
 import time
 
-import nametag.bluefruit
-import nametag.logging_setup
+from nametag import bluefruit, logging_setup
 
 
 async def run(args):
-    async with nametag.bluefruit.Bluefruit(port=args.port) as adapter:
+    async with bluefruit.Bluefruit(port=args.port) as adapter:
         start_mono = time.monotonic()
         next_status = 0.0
         while True:
@@ -38,6 +37,6 @@ parser.add_argument("--packet", type=int, default=128)
 
 args = parser.parse_args()
 if args.debug:
-    nametag.logging_setup.enable_debug()
+    logging_setup.enable_debug()
 
 asyncio.run(run(args), debug=args.debug)
