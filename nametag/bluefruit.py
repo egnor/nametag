@@ -400,7 +400,7 @@ class _SerialPort:
             raise
 
     async def __aexit__(self, exc_type, exc, tb):
-        if self._serial and self._serial.is_open:
+        if self._serial and self._serial.is_open and self._fileno is not None:
             try:
                 logger.debug(f"Closing adapter serial ({self._port})")
                 loop = asyncio.get_running_loop()

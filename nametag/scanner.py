@@ -179,8 +179,8 @@ if __name__ == "__main__":
     async def test_task(tag):
         print(f"  [{tag.id}] connected, reading...")
         stash = await tag.read_stash()
-        print(f"  [{tag.id}] stash is {stash}, writing 'HELLO'...")
-        await tag.write_stash(b"HELLO")
+        print(f"  [{tag.id}] stash is {stash}, writing 'HE[0x03]LLO'...")
+        await tag.write_stash(b"HE\x03LLO")
         print(f"  [{tag.id}] wrote, disconnecting...")
 
     async def test_main(args):
