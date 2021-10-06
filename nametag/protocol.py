@@ -29,10 +29,10 @@ class Nametag:
         self.adapter = adapter
         self.dev = dev
         self.id = tag_id
+        self._sent_notify = False
 
     async def __aenter__(self):
         await self.adapter.connect(self.dev)
-        await self.adapter.write(self.dev, 4, b"\x00\x01")  # CCCD notify
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
@@ -144,6 +144,10 @@ class Nametag:
         def chunks(data: bytes, *, size: int) -> Iterable[bytes]:
             for s in range(0, len(data), size):
                 yield data[s : s + size]
+
+        if not self._sent_notify:
+            await self.adapter.write(self.dev, 4, b"\x00\x01")  # CCCD notify
+            self._sent_notify = True
 
         for index, chunk in enumerate(chunks(body, size=128)):
             body = struct.pack(">xHHB", len(body), index, len(chunk)) + chunk
