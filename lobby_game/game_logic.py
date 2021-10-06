@@ -5,17 +5,9 @@ import attr
 
 from lobby_game import tag_data
 
-FLAVOR_START = {
-    "A": "TWIN",
-    "B": "MAN",
-    "C": "MOTHER",
-}
+FLAVOR_START = {"A": "TWIN", "B": "MAN", "C": "MOTHER"}
 
-FLAVOR_END = {
-    "A": "REST",
-    "B": "IN",
-    "C": "PEACE",
-}
+FLAVOR_END = {"A": "REST", "B": "IN", "C": "PEACE"}
 
 NEXT_WORD = {
     # "Beheading" (Ichabod): Remove the first letter
@@ -99,6 +91,13 @@ CHECKPOINT = {
     "WAR": "GO",
 }
 
+NEXT_GHOST = {
+    "TWIN": 1,
+    "MAN": 2,
+    "MOTHER": 1,
+    "GO": 3,
+}
+
 
 # Anagrams and opposites are reversible
 for reversible in NEXT_WORD[2], NEXT_WORD[3]:
@@ -111,6 +110,9 @@ def content_for_tag(
     config: tag_data.TagConfig,
     state: Optional[tag_data.TagState],
 ) -> Optional[tag_data.DisplayContent]:
+    Scene = tag_data.DisplayScene
+    State = tag_data.TagState
+
     start_word = FLAVOR_START.get(config.flavor, "BADTAG")
     end_word = FLAVOR_END.get(config.flavor, "BADTAG")
 
@@ -121,22 +123,18 @@ def content_for_tag(
             return None
 
         return tag_data.DisplayContent(
-            new_state=tag_data.TagState(b"GAM", string=start_word.encode()),
+            new_state=State(b"GAM", string=start_word.encode()),
             scenes=[
-                tag_data.DisplayScene(
-                    f"need-tag{config.flavor}", end_word, bold=True
-                ),
-                tag_data.DisplayScene("use-guides"),
-                tag_data.DisplayScene(
-                    "give", f'"{start_word}"', bold=True, blink=True
-                ),
+                Scene(f"need-tag{config.flavor}", end_word, bold=True),
+                Scene("give", f'"{start_word}"', bold=True, blink=True),
+                Scene("use-guides"),
             ],
         )
 
     if not state:
         return tag_data.DisplayContent(
-            new_state=tag_data.TagState(b"RST"),
-            scenes=[tag_data.DisplayScene("tag-reset")],
+            new_state=State(b"RST"),
+            scenes=[Scene("tag-reset")],
         )
 
     if state.phase != b"GAM":
@@ -146,71 +144,72 @@ def content_for_tag(
 
     last_word = state.string.decode(errors="replace")
     last_ghost = state.number
-    log_prefix = f'{config} G{last_ghost} "{last_word}" || G{ghost_id}'
+    log_prefix = f'{config} G{last_ghost} "{last_word}" :: G{ghost_id}'
 
     if last_ghost == ghost_id:
         logging.info(f"{log_prefix} -> No change (revisit)")
         return None
 
     next_word = NEXT_WORD.get(ghost_id, {}).get(last_word)
-    if not next_word:
-        restart = CHECKPOINT.get(last_word, start_word)
-
-        logging.info(f'{log_prefix} X> "{restart}" restart')
+    if next_word == end_word:
+        logging.info(f'{log_prefix} => "{next_word}" success!!!')
         return tag_data.DisplayContent(
-            new_state=tag_data.TagState(
-                b"GAM", number=ghost_id, string=restart.encode()
-            ),
+            new_state=State(b"WIN"),
+            scenes=[Scene("success", f'"{next_word}"', bold=True)],
+        )
+
+    if next_word:
+        logging.info(f'{log_prefix} => "{next_word}" advance')
+        return tag_data.DisplayContent(
+            new_state=State(b"GAM", number=ghost_id, string=next_word.encode()),
             scenes=[
-                tag_data.DisplayScene(f"reject-ghost{ghost_id}", last_word),
-                tag_data.DisplayScene(
-                    ("stay-at-" if last_word == restart else "return-to-")
-                    + ("checkpoint" if last_word in CHECKPOINT else "start"),
-                    f'"{restart}"',
+                Scene(f"accept-ghost{ghost_id}", f'"{last_word}"'),
+                Scene(
+                    f"give-ghost{ghost_id}",
+                    f'"{next_word}"',
                     bold=True,
                     blink=True,
                 ),
-                tag_data.DisplayScene("visit-another"),
             ],
         )
 
-        logging.info(f'{log_prefix} X> "{start_word}" restart')
+    restart = CHECKPOINT.get(last_word, start_word)
+    if last_word == restart:
+        logging.info(f'{log_prefix} X> "{restart}" retry')
         return tag_data.DisplayContent(
-            new_state=tag_data.TagState(
-                b"GAM", number=ghost_id, string=start_word.encode()
-            ),
+            new_state=State(b"GAM", number=ghost_id, string=restart.encode()),
             scenes=[
-                tag_data.DisplayScene(f"reject-ghost{ghost_id}", last_word),
-                tag_data.DisplayScene(
-                    "reject2", f'"{start_word}"', bold=True, blink=True
+                Scene(f"reject-ghost{ghost_id}", f'"{last_word}"'),
+                Scene("maybe-try-another"),
+            ],
+        )
+
+    if ghost_id == NEXT_GHOST.get(restart, 0):
+        skip = NEXT_WORD[ghost_id][restart]
+        logging.info(f'{log_prefix} X> "{restart}" >> "{skip}" reskip')
+        return tag_data.DisplayContent(
+            new_state=State(b"GAM", number=ghost_id, string=skip.encode()),
+            scenes=[
+                Scene(f"reject-ghost{ghost_id}", last_word),
+                Scene("was-back-at", f'"{restart}"'),
+                Scene(f"accept-ghost{ghost_id}", f'"{restart}"'),
+                Scene(
+                    f"give-ghost{ghost_id}",
+                    f'"{skip}"',
+                    bold=True,
+                    blink=True,
                 ),
-                tag_data.DisplayScene("visit-another"),
             ],
         )
 
-    if next_word == end_word:
-        logging.info(f'{log_prefix} => "{next_word}" !!!')
-        return tag_data.DisplayContent(
-            new_state=tag_data.TagState(b"WIN"),
-            scenes=[
-                tag_data.DisplayScene("success", f'"{next_word}"', bold=True),
-            ],
-        )
-
-    logging.info(f'{log_prefix} => "{next_word}"')
+    logging.info(f'{log_prefix} X> "{restart}" restart')
+    new_state = State(b"GAM", number=ghost_id, string=restart.encode())
     return tag_data.DisplayContent(
-        new_state=tag_data.TagState(
-            b"GAM", number=ghost_id, string=next_word.encode()
-        ),
+        new_state=new_state,
         scenes=[
-            tag_data.DisplayScene(f"accept-ghost{ghost_id}", f'"{last_word}"'),
-            tag_data.DisplayScene(
-                f"give-ghost{ghost_id}",
-                f'"{next_word}"',
-                bold=True,
-                blink=True,
-            ),
-            tag_data.DisplayScene("visit-another"),
+            Scene(f"reject-ghost{ghost_id}", f'"{last_word}"'),
+            Scene("now-back-at", f'"{restart}"', bold=True, blink=True),
+            Scene("now-visit-another"),
         ],
     )
 

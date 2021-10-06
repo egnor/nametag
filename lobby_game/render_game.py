@@ -45,9 +45,13 @@ def image_text(
     image_path: Optional[Path], font_dir: Path, text: str
 ) -> PIL.Image.Image:
     image = get_image(image_path)
-    glyphs = [get_image(font_dir / (ch + ".ase")) for ch in text]
-    spacing = list(1 + KERNING.get(ab, 0) for ab in zip(text[:-1], text[1:]))
 
+    try:
+        glyphs = [get_image(font_dir / (ch + ".ase")) for ch in text]
+    except FileNotFoundError as exc:
+        raise ValueError(f'Bad text ({font_dir}): "{text}"') from exc
+
+    spacing = list(1 + KERNING.get(ab, 0) for ab in zip(text[:-1], text[1:]))
     text_w = sum(g.size[0] for g in glyphs) + sum(spacing)
     text_h = max((g.size[1] for g in glyphs), default=0)
     if text_w > image.size[0] or text_h > image.size[1]:
@@ -82,8 +86,12 @@ def content_frames(
         image_name = scene.image_name
         image_path = (game_dir / f"{image_name}.ase") if image_name else None
         font_dir = art_dir / ("font-bold" if scene.bold else "font")
-        base_image = image_text(image_path, font_dir, "")
-        image = image_text(image_path, font_dir, scene.text)
+
+        try:
+            base_image = image_text(image_path, font_dir, "")
+            image = image_text(image_path, font_dir, scene.text)
+        except ValueError as exc:
+            raise ValueError(f"Bad scene: {scene}") from exc
 
         if scene.blink:
             frames.append(base_image)
