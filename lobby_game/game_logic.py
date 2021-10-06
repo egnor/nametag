@@ -129,8 +129,8 @@ def content_for_tag(
             new_state=State(b"GAM", string=start_word.encode()),
             scenes=[
                 Scene(f"need-tag{config.flavor}", end_word, bold=True),
-                Scene("give", f'"{start_word}"', bold=True, blink=True),
                 Scene("use-guides"),
+                Scene("give", f'"{start_word}"', bold=True, blink=True),
             ],
         )
 
