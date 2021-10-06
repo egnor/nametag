@@ -190,7 +190,7 @@ def content_for_tag(
         return tag_data.DisplayContent(
             new_state=State(b"GAM", number=ghost_id, string=skip.encode()),
             scenes=[
-                Scene(f"reject-ghost{ghost_id}", last_word),
+                Scene(f"reject-ghost{ghost_id}", f'"{last_word}"'),
                 Scene("was-back-at", f'"{restart}"'),
                 Scene(f"accept-ghost{ghost_id}", f'"{restart}"'),
                 Scene(

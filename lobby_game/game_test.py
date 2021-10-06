@@ -27,8 +27,8 @@ def try_ghost(
     if not content:
         return
 
-    image_path = out_dir / f"{''.join(str(g) for g in sequence)}.gif"
-    render_game.render_to_file(content=content, path=image_path, zoom=15)
+    name = f"{config.flavor}{''.join(str(g) for g in sequence)}.gif"
+    render_game.render_to_file(content=content, path=out_dir / name, zoom=15)
 
     for scene in content.scenes:
         name = scene.image_name
@@ -63,6 +63,6 @@ for flavor in game_logic.FLAVOR_START.keys():
     print(f"=== {flavor} ===")
     config = tag_data.TagConfig(id="XXXX", flavor=flavor)
     state = tag_data.TagState(phase=b"ZZZ")
-    try_ghost(0, config, state, set(), [0])
-    try_ghost(1, config, state, set(), [0])  # verify reset logic
+    try_ghost(0, config, state, set(), [])
+    try_ghost(1, config, state, set(), [])  # verify reset logic
     print()
