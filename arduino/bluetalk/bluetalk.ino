@@ -720,7 +720,7 @@ static int decode_escaped(char *str) {
 static void print_escaped(const void *data, int size) {
   for (int i = 0; i < size; ++i) {
     const auto b = ((const uint8_t *) data)[i];
-    if (b > 32 && b < 128 && b != '%' && b != '"') {
+    if (b > 32 && b < 128 && b != '%' && b != '"' && b != '\\' && b != '=') {
       Serial.write(b);
     } else {
       Serial.printf("%%%02x", b);

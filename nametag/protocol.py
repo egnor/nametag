@@ -99,7 +99,7 @@ class Nametag:
         await self.send_raw_packet(header + data)
         await self.flush()  # Ensure stash is committed
         stash_backup[self.id] = StashBackup(data, time.monotonic(), False)
-        logger.debug(f"[{self.id}] Write stash: {data!r} (=> backup)")
+        logger.debug(f"[{self.id}] Wrote stash: {data!r} (=> backup)")
 
     async def read_stash(self) -> Optional[bytes]:
         packet = await self.adapter.read(self.dev, 3)

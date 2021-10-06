@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import argparse
 import asyncio
 import logging
@@ -5,14 +7,22 @@ import logging
 from nametag import logging_setup, scanner
 
 
-async def test_task(tag):
-    print(f"  [{tag.id}] connected, reading...")
-    stash = await tag.read_stash()
-    # to_stash = b"HELLO"
-    to_stash = b"\x03GAM\x00\x00MAN"
-    print(f"  [{tag.id}] stash is {stash}, writing {to_stash}...")
-    await tag.write_stash(to_stash)
-    print(f"  [{tag.id}] wrote, disconnecting...")
+async def test_task(tag, args):
+    raw_packet = b"\x89\x3D"
+    await tag.adapter.write(tag.dev, 3, raw_packet)
+    await tag.adapter.flush(tag.dev)
+    readback = await tag.adapter.read(tag.dev, 3)
+    if readback.startswith(raw_packet):
+        print(f"Successful loop: {readback!r}")
+    else:
+        raise scanner.StopScanningException(
+            f"SENT {raw_packet!r}, GOT {readback!r}"
+        )
+
+    # stash_write = b"\x03GAM\x00\x00MAN"
+    # await tag.write_stash(stash_write)
+    # stash_read = await tag.read_stash()
+    # assert stash_read == stash_write
 
 
 parser = argparse.ArgumentParser()
@@ -22,4 +32,4 @@ args = parser.parse_args()
 if args.debug:
     logging_setup.enable_debug()
 
-asyncio.run(scanner.scan_and_spawn(runner=test_task), debug=args.debug)
+asyncio.run(scanner.scan_and_spawn(test_task, args), debug=args.debug)

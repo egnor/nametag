@@ -26,6 +26,10 @@ class ScannerOptions:
     status_interval: float = 0.5
 
 
+class StopScanningException(Exception):
+    pass
+
+
 async def scan_and_spawn(
     runner: Callable,
     *args,
@@ -35,6 +39,7 @@ async def scan_and_spawn(
     id_task: Dict[str, asyncio.Task] = {}
     id_attempt_mono: Dict[str, float] = {}
     id_success_mono: Dict[str, float] = {}
+    stop_received = None
 
     def spawn_connection(
         adapter: bluefruit.Bluefruit,
@@ -62,10 +67,14 @@ async def scan_and_spawn(
                 task.result()
                 id_success_mono[tag.id] = time.monotonic()
                 logger.debug(f"[{tag.id}] Tag task successful")
-            except asyncio.CancelledError:
-                logger.debug(f"[{tag.id}] Tag task cancelled")
+            except StopScanningException as exc:
+                logger.debug(f"[{tag.id}] StopScanningException: {exc}")
+                nonlocal stop_received
+                stop_received = exc
             except bluefruit.BluefruitError as exc:
                 logger.warning(f"[{tag.id}] {exc}")
+            except asyncio.CancelledError:
+                logger.debug(f"[{tag.id}] Tag task cancelled")
             except Exception:
                 logger.error(f"[{tag.id}] Tag task failed", exc_info=True)
 
@@ -125,16 +134,16 @@ async def scan_and_spawn(
         return id_status
 
     async def scan_with_adapter(adapter: bluefruit.Bluefruit):
-        logging.debug("Starting scan loop...")
+        logger.debug("Starting scan loop...")
         next_status_monotime = 0.0
         try:
-            while True:
+            while stop_received is None:
                 id_status = poll_adapter(adapter)
                 monotime = time.monotonic()
                 spawned = any("*" in s for s in id_status.values())
                 if monotime >= next_status_monotime or spawned:
                     status = " ".join(s for id, s in sorted(id_status.items()))
-                    logging.info("Tags: " + (status or "(none)"))
+                    logger.info("Tags: " + (status or "(none)"))
                     next_status_monotime = monotime + options.status_interval
                 await asyncio.sleep(options.loop_delay)
 
@@ -147,12 +156,12 @@ async def scan_and_spawn(
                 logger.debug("All tasks stopped, exiting...")
 
     next_status_monotime = 0.0
-    while True:
+    while stop_received is None:
         ports = list(serial.tools.list_ports.grep(options.port_regex))
         monotime = time.monotonic()
         if monotime >= next_status_monotime or ports:
             next_status_monotime = monotime + 1.0
-            logging.info(
+            logger.info(
                 f"Scanning for adapter /{options.port_regex}/, "
                 f"found {len(ports)}..."
                 + "".join(f"\n  {p.device} {p.hwid}" for p in ports)
@@ -161,14 +170,16 @@ async def scan_and_spawn(
         if ports:
             path = ports[0].device
             if len(ports) > 2:
-                logging.warning(f"Multiple adapters found, using {path}")
+                logger.warning(f"Multiple adapters found, using {path}")
             try:
                 async with bluefruit.Bluefruit(port=path) as adapt:
                     await scan_with_adapter(adapt)
             except bluefruit.PortError as exc:
-                logging.warning(f"Adapter I/O error ({exc}), retrying...")
+                logger.warning(f"Adapter I/O error ({exc}), retrying...")
 
         await asyncio.sleep(options.loop_delay)
+
+    logger.info(f"Scanning stopped: {stop_received}")
 
 
 if __name__ == "__main__":
@@ -179,8 +190,7 @@ if __name__ == "__main__":
     async def test_task(tag):
         print(f"  [{tag.id}] connected, reading...")
         stash = await tag.read_stash()
-        # to_stash = b"HELLO"
-        to_stash = b"\x03GAM\x00\x00MAN"
+        to_stash = b"HELLO"
         print(f"  [{tag.id}] stash is {stash}, writing {to_stash}...")
         await tag.write_stash(to_stash)
         print(f"  [{tag.id}] wrote, disconnecting...")
