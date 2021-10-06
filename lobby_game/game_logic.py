@@ -11,10 +11,10 @@ FLAVOR_START = {
     "C": "MOTHER",
 }
 
-SUCCESS_WORDS = {
-    "REST",
-    "IN",
-    "PEACE",
+FLAVOR_END = {
+    "A": "REST",
+    "B": "IN",
+    "C": "PEACE",
 }
 
 NEXT_WORD = {
@@ -112,6 +112,7 @@ def content_for_tag(
     state: Optional[tag_data.TagState],
 ) -> Optional[tag_data.DisplayContent]:
     start_word = FLAVOR_START.get(config.flavor, "BADTAG")
+    end_word = FLAVOR_END.get(config.flavor, "BADTAG")
 
     if not ghost_id:  # Staff station
         if state and (state.phase in (b"GAM", b"WIN")):
@@ -122,9 +123,13 @@ def content_for_tag(
         return tag_data.DisplayContent(
             new_state=tag_data.TagState(b"GAM", string=start_word.encode()),
             scenes=[
-                tag_data.DisplayScene(f"welcome1-{config.flavor}"),
-                tag_data.DisplayScene("welcome2"),
-                tag_data.DisplayScene("welcome3", f'"{start_word}"'),
+                tag_data.DisplayScene(
+                    f"need-tag{config.flavor}", end_word, bold=True
+                ),
+                tag_data.DisplayScene("use-guides"),
+                tag_data.DisplayScene(
+                    "give", f'"{start_word}"', bold=True, blink=True
+                ),
             ],
         )
 
@@ -149,24 +154,25 @@ def content_for_tag(
 
     next_word = NEXT_WORD.get(ghost_id, {}).get(last_word)
     if not next_word:
-        checkpoint = CHECKPOINT.get(last_word)
-        if checkpoint:
-            logging.info(f'{log_prefix} X> "{checkpoint}" checkpoint')
-            return tag_data.DisplayContent(
-                new_state=tag_data.TagState(
-                    b"GAM", number=ghost_id, string=checkpoint.encode()
+        restart = CHECKPOINT.get(last_word, start_word)
+
+        logging.info(f'{log_prefix} X> "{restart}" restart')
+        return tag_data.DisplayContent(
+            new_state=tag_data.TagState(
+                b"GAM", number=ghost_id, string=restart.encode()
+            ),
+            scenes=[
+                tag_data.DisplayScene(f"reject-ghost{ghost_id}", last_word),
+                tag_data.DisplayScene(
+                    ("stay-at-" if last_word == restart else "return-to-")
+                    + ("checkpoint" if last_word in CHECKPOINT else "start"),
+                    f'"{restart}"',
+                    bold=True,
+                    blink=True,
                 ),
-                scenes=[
-                    tag_data.DisplayScene("reject1-ghost{ghost_id}", last_word),
-                    tag_data.DisplayScene(
-                        "reject2-checkpoint",
-                        f'"{checkpoint}"',
-                        bold=True,
-                        blink=True,
-                    ),
-                    tag_data.DisplayScene("reject3"),
-                ],
-            )
+                tag_data.DisplayScene("visit-another"),
+            ],
+        )
 
         logging.info(f'{log_prefix} X> "{start_word}" restart')
         return tag_data.DisplayContent(
@@ -174,23 +180,20 @@ def content_for_tag(
                 b"GAM", number=ghost_id, string=start_word.encode()
             ),
             scenes=[
-                tag_data.DisplayScene("reject1-ghost{ghost_id}", last_word),
+                tag_data.DisplayScene(f"reject-ghost{ghost_id}", last_word),
                 tag_data.DisplayScene(
                     "reject2", f'"{start_word}"', bold=True, blink=True
                 ),
-                tag_data.DisplayScene("reject3"),
+                tag_data.DisplayScene("visit-another"),
             ],
         )
 
-    if next_word in SUCCESS_WORDS:
+    if next_word == end_word:
         logging.info(f'{log_prefix} => "{next_word}" !!!')
         return tag_data.DisplayContent(
             new_state=tag_data.TagState(b"WIN"),
             scenes=[
-                tag_data.DisplayScene("success1"),
-                tag_data.DisplayScene(
-                    "success2", f'"{next_word}"', bold=True, blink=True
-                ),
+                tag_data.DisplayScene("success", f'"{next_word}"', bold=True),
             ],
         )
 
@@ -200,11 +203,14 @@ def content_for_tag(
             b"GAM", number=ghost_id, string=next_word.encode()
         ),
         scenes=[
-            tag_data.DisplayScene(f"accept1-ghost{ghost_id}", last_word),
+            tag_data.DisplayScene(f"accept-ghost{ghost_id}", f'"{last_word}"'),
             tag_data.DisplayScene(
-                "accept2", f'"{next_word}"', bold=True, blink=True
+                f"give-ghost{ghost_id}",
+                f'"{next_word}"',
+                bold=True,
+                blink=True,
             ),
-            tag_data.DisplayScene("accept3"),
+            tag_data.DisplayScene("visit-another"),
         ],
     )
 
@@ -212,7 +218,8 @@ def content_for_tag(
 if __name__ == "__main__":
     import argparse
 
-    import nametag.logging_setup
+    from lobby_game import render_game
+    from nametag import logging_setup
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--ghost_id", type=int, default=1)
@@ -220,6 +227,8 @@ if __name__ == "__main__":
     parser.add_argument("--old_phase", default="GAM")
     parser.add_argument("--old_ghost", type=int, default=0)
     parser.add_argument("--old_word", default="LEAST")
+    parser.add_argument("--save_image", default="tmp.gif")
+    parser.add_argument("--zoom", type=int, default=15)
     args = parser.parse_args()
 
     tag = tag_data.TagConfig(id="XXXX", flavor=args.tag_flavor)
@@ -247,3 +256,8 @@ if __name__ == "__main__":
                 f"{' +bold' if scene.bold else ''}"
                 f"{' +blink' if scene.blink else ''}"
             )
+
+        render_game.render_to_file(
+            content=content, path=args.save_image, zoom=args.zoom
+        )
+        print(f"Wrote image: {args.save_image}")

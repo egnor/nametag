@@ -1,7 +1,7 @@
 import logging
 import struct
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import attr
 import PIL.Image  # type: ignore
@@ -11,7 +11,7 @@ from nametag import aseprite_loader, protocol
 
 art_dir = Path(__file__).resolve().parent.parent / "art"
 game_dir = art_dir / "lobby-game"
-image_cache: Dict[Path, PIL.Image.Image] = {}
+image_cache: Dict[Optional[Path], PIL.Image.Image] = {}
 
 KERNING = {
     ('"', "A"): -1,
@@ -28,19 +28,23 @@ STATE_STRUCT = struct.Struct("<4ph")
 state_memory: Dict[str, tag_data.TagState] = {}
 
 
-def get_image(path: Path) -> PIL.Image.Image:
+def get_image(path: Optional[Path]) -> PIL.Image.Image:
     image = image_cache.get(path)
     if not image:
-        logging.info(f"Loading image: {path}")
-        image = PIL.Image.open(path).convert(mode="1")
-        image.info.pop("transparency", None)  # Work around PILlow bug
+        if not path:
+            image = PIL.Image.new(mode="1", size=(48, 12), color=0)
+        else:
+            logging.info(f"Loading image: {path}")
+            image = PIL.Image.open(path).convert(mode="1")
+            image.info.pop("transparency", None)  # Work around PILlow bug
         image_cache[path] = image
     return image
 
 
-def add_text(
-    image: PIL.Image.Image, font_dir: Path, text: str
+def image_text(
+    image_path: Optional[Path], font_dir: Path, text: str
 ) -> PIL.Image.Image:
+    image = get_image(image_path)
     glyphs = [get_image(font_dir / (ch + ".ase")) for ch in text]
     spacing = list(1 + KERNING.get(ab, 0) for ab in zip(text[:-1], text[1:]))
 
@@ -59,7 +63,7 @@ def add_text(
         raise ValueError(
             f'Text "{text}" ({text_w}x{text_h}) '
             f"doesn't fit blank ({gap_x},{image.size[1] - text_h})-"
-            f"({image.size[0]},{image.size[1]})"
+            f"({image.size[0]},{image.size[1]}) in {image_path}"
         )
 
     left_x = (gap_x + image.size[0] - text_w + 1) // 2
@@ -74,15 +78,12 @@ def content_frames(
     content: tag_data.DisplayContent,
 ) -> List[PIL.Image.Image]:
     frames: List[PIL.Image.Image] = []
-    blank_image = PIL.Image.new("1", (48, 12))
     for scene in content.scenes:
-        image_path = scene.image_name and (game_dir / f"{scene.image_name}.ase")
-        base_image = get_image(image_path) if image_path else blank_image
-        if scene.text:
-            font = art_dir / ("font-bold" if scene.bold else "font")
-            image = add_text(image=base_image, font_dir=font, text=scene.text)
-        else:
-            image = base_image
+        image_name = scene.image_name
+        image_path = (game_dir / f"{image_name}.ase") if image_name else None
+        font_dir = art_dir / ("font-bold" if scene.bold else "font")
+        base_image = image_text(image_path, font_dir, "")
+        image = image_text(image_path, font_dir, scene.text)
 
         if scene.blink:
             frames.append(base_image)
@@ -100,7 +101,7 @@ def content_frames(
             frames.append(image)
 
         if len(content.scenes) > 1:
-            frames.append(blank_image)
+            frames.append(get_image(None))
 
     return frames
 
@@ -115,20 +116,37 @@ async def render_content(
     await stash_state.write(tag=tag, state=content.new_state)
 
 
+def render_to_file(
+    *, content: tag_data.DisplayContent, path: Path, zoom: int = 1
+):
+    frames = [
+        f.convert("P").resize((f.size[0] * zoom, f.size[1] * zoom))
+        for f in content_frames(content)
+    ]
+    frames[0].save(
+        path,
+        save_all=True,
+        append_images=frames[1:],
+        loop=0,
+        duration=500,
+    )
+
+
 if __name__ == "__main__":  # For testing
     import argparse
 
     import nametag.logging_setup
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--save_image", type=Path, default="tmp.gif")
     parser.add_argument(
         "--frames",
         type=str,
         nargs="+",
-        default=["ghost-1-say+HELLO+bold+blink"],
+        default=["need-tagC+LOVE+bold+blink"],
         help="List of imagename+TEXT[+bold][+blink]",
     )
+    parser.add_argument("--save_image", type=Path, default="tmp.gif")
+    parser.add_argument("--zoom", type=int, default=15)
 
     args = parser.parse_args()
     content = tag_data.DisplayContent(
@@ -144,12 +162,5 @@ if __name__ == "__main__":  # For testing
         scene.blink = "blink" in parts[2:]
         content.scenes.append(scene)
 
-    frames = [f.convert("P") for f in content_frames(content)]
-    frames[0].save(
-        args.save_image,
-        save_all=True,
-        append_images=frames[1:],
-        loop=0,
-        duration=500,
-    )
+    render_to_file(content=content, path=args.save_image, zoom=args.zoom)
     print(f"Wrote image: {args.save_image}")

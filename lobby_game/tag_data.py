@@ -37,7 +37,7 @@ class TagConfig:
 @attr.define
 class DisplayScene:
     image_name: Optional[str] = None
-    text: Optional[str] = None
+    text: str = ""
     bold: bool = False
     blink: bool = False
 

@@ -21,9 +21,11 @@ def try_ghost(
     if not content:
         return
 
-    # render_game.content_frames(content)  # ensure it works
+    render_game.content_frames(content)  # ensure it works
     for scene in content.scenes:
-        if scene.image_name in ("welcome2", "accept2", "success2"):
+        name = scene.image_name
+        good_prefixes = ("need-", "accept-", "success")
+        if any((name or "").startswith(p) for p in good_prefixes):
             break
     else:
         return
@@ -55,4 +57,5 @@ for flavor in game_logic.FLAVOR_START.keys():
     config = tag_data.TagConfig(id="XXXX", flavor=flavor)
     state = tag_data.TagState(phase=b"ZZZ")
     try_ghost(0, config, state, set(), 0)
+    try_ghost(1, config, state, set(), 0)  # verify reset logic
     print()
