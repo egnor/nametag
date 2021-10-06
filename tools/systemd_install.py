@@ -30,10 +30,10 @@ subprocess.run(
     check=True
 )
 
-subprocess.run(
-    ["sudo", "systemctl", "enable", "lobby_game@1.service"], check=True
-)
+parser = argparse.ArgumentParser()
+parser.add_argument("--ghost_id", type=int, required=True)
+args = parser.parse_args()
 
-subprocess.run(
-    ["sudo", "systemctl", "start", "lobby_game@1.service"], check=True
-)
+service_unit = f"lobby_game@{args.ghost_id}.service"
+subprocess.run(["sudo", "systemctl", "enable", service_unit], check=True)
+subprocess.run(["sudo", "systemctl", "start", service_unit], check=True)
