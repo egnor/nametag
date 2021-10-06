@@ -114,21 +114,25 @@ class Nametag:
 
         backup = stash_backup.get(self.id)
         if not backup:
-            logger.warning(f"[{self.id}] No stash (and no backup)")
+            logger.warning(f"[{self.id}] No stash ({packet!r}), no backup")
             return None
 
         if not backup.active:
-            logger.warning(f"[{self.id}] No stash and backup inactive")
+            logger.warning(
+                f"[{self.id}] No stash ({packet!r}), inactive backup"
+            )
             return None
 
         age = time.monotonic() - backup.monotime
         if age > 120:
-            logger.warning(f"[{self.id}] No stash and backup old ({age:.1f}s)")
+            logger.warning(
+                f"[{self.id}] No stash ({packet!r}), old backup ({age:.1f}s)"
+            )
             return None
 
         logger.warning(
-            f"[{self.id}] No stash, using backup ({age:.1f}s old): "
-            f"{backup.data!r}"
+            f"[{self.id}] No stash ({packet!r}), using backup "
+            f"({age:.1f}s old): {backup.data!r}"
         )
         return backup.data
 
