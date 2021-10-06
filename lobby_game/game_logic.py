@@ -15,6 +15,8 @@ NEXT_WORD = {
         w: w[1:]
         for w in {
             "AGO",
+            "AWAY",
+            "BOTHER",
             "LEAST",
             "MOTHER",
             "OPEN",
@@ -43,6 +45,7 @@ NEXT_WORD = {
             ("LOSE", "NOSE"),
             ("LOST", "MOST"),
             ("MAN", "MEN"),
+            ("MOTHER", "BOTHER"),
             ("OMEN", "OPEN"),
             ("OTHER", "OCHER"),
             ("PEN", "PUN"),
@@ -155,7 +158,10 @@ def content_for_tag(
         logging.info(f'{log_prefix} => "{next_word}" success!!!')
         return tag_data.DisplayContent(
             new_state=State(b"WIN"),
-            scenes=[Scene("success", f'"{next_word}"', bold=True)],
+            scenes=[
+                Scene(f"accept-ghost{ghost_id}", f'"{last_word}"'),
+                Scene("success", f'"{next_word}"', bold=True, blink=True),
+            ],
         )
 
     if next_word:

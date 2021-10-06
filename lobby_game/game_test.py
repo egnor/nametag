@@ -3,7 +3,7 @@
 import logging
 import shutil
 from pathlib import Path
-from typing import List, Set, Tuple
+from typing import Dict, List, Set, Tuple
 
 from lobby_game import game_logic, render_game, tag_data
 from nametag import logging_setup
@@ -18,6 +18,7 @@ def try_ghost(
     config: tag_data.TagConfig,
     state: tag_data.TagState,
     seen: Set[Tuple[tag_data.TagConfig, tag_data.TagState]],
+    dead_ends: Dict[int, Set[str]],
     sequence: List[int],
 ):
     content = game_logic.content_for_tag(
@@ -31,9 +32,13 @@ def try_ghost(
     render_game.render_to_file(content=content, path=out_dir / name, zoom=15)
 
     for scene in content.scenes:
-        name = scene.image_name
+        name = scene.image_name or ""
+        bad_prefixes = ("reject-",)
+        if any(name.startswith(p) for p in bad_prefixes):
+            dead_ends.setdefault(ghost_id, set()).add(state.string.decode())
+
         good_prefixes = ("need-", "accept-", "success")
-        if any((name or "").startswith(p) for p in good_prefixes):
+        if any(name.startswith(p) for p in good_prefixes):
             break
     else:
         return
@@ -53,8 +58,9 @@ def try_ghost(
     )
 
     if not revisit:
+        state = content.new_state
         for next in (1, 2, 3):
-            try_ghost(next, config, content.new_state, seen, sequence + [next])
+            try_ghost(next, config, state, seen, dead_ends, sequence + [next])
 
 
 logging.getLogger().setLevel(logging.WARNING)
@@ -63,6 +69,12 @@ for flavor in game_logic.FLAVOR_START.keys():
     print(f"=== {flavor} ===")
     config = tag_data.TagConfig(id="XXXX", flavor=flavor)
     state = tag_data.TagState(phase=b"ZZZ")
-    try_ghost(0, config, state, set(), [])
-    try_ghost(1, config, state, set(), [])  # verify reset logic
+    dead_ends: Dict[int, Set[str]] = {}
+    try_ghost(0, config, state, set(), dead_ends, [])
+    try_ghost(1, config, state, set(), dead_ends, [])  # verify reset logic
+    print()
+
+for ghost_id, ends in sorted(dead_ends.items()):
+    print(f"=== DEAD ENDS FOR G{ghost_id} ===")
+    print(", ".join(ends))
     print()
