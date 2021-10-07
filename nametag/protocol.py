@@ -96,8 +96,13 @@ class Nametag:
         if len(data) > 18:
             raise ValueError(f"Stash data too long ({len(data)}b)")
         header = struct.pack("BB", 0x80 | len(data), Nametag._stash_crc(data))
-        await self.send_raw_packet(header + data)
-        await self.flush()  # Ensure stash is committed
+        packet = header + data
+        await self.send_raw_packet(packet)
+        await self.flush()
+        read = await self.adapter.read(self.dev, 3)
+        if read != packet:
+            raise ProtocolError(f"Sent stash {packet!r}, read back {read!r}")
+
         stash_backup[self.id] = StashBackup(data, time.monotonic(), False)
         logger.debug(f"[{self.id}] Wrote stash: {data!r} (=> backup)")
 
