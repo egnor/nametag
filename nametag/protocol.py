@@ -100,7 +100,7 @@ class Nametag:
         await self.send_raw_packet(packet)
         await self.flush()
         read = await self.adapter.read(self.dev, 3)
-        if read != packet:
+        if not read.startswith(packet):
             raise ProtocolError(f"Sent stash {packet!r}, read back {read!r}")
 
         stash_backup[self.id] = StashBackup(data, time.monotonic(), False)
