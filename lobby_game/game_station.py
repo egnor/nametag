@@ -42,9 +42,13 @@ if args.debug:
     logging_setup.enable_debug()
 
 tag_config = tag_data.load_configs(args.config)
+options = scanner.ScannerOptions()
+options.minimum_rssi = -70
+
 asyncio.run(
     scanner.scan_and_spawn(
         runner=check_tag,
+        options=options,
         tag_config=tag_config,
         ghost_id=args.ghost_id,
     ),
