@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from typing import Dict
 
-from lobby_game import game_logic, render_game, stash_state, tag_data
+from lobby_game import game_logic, render_game, tag_data
 from nametag import bluefruit, logging_setup, protocol, scanner
 
 
@@ -22,13 +22,13 @@ async def check_tag(
         return
 
     logging.info(f"{config} Connected, reading state stash...")
-    state = await stash_state.read(tag)
-    content = game_logic.content_for_tag(
-        ghost_id=ghost_id, config=config, state=state
+    stash = await tag.read_stash()
+    program = game_logic.program_for_tag(
+        ghost_id=ghost_id, config=config, stash=stash
     )
 
-    if content:
-        await render_game.render_content(content=content, tag=tag)
+    if program:
+        await render_game.render_program(program=program, tag=tag)
         logging.info(f"{config} Done sending, disconnecting...")
     return True
 

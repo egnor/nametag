@@ -4,7 +4,7 @@ from typing import List
 
 import PIL.Image  # type: ignore
 
-from lobby_game import stash_state, tag_data
+from lobby_game import tag_data
 from nametag import aseprite_loader, protocol
 
 TEAM_EMOJIS = [
@@ -55,10 +55,8 @@ async def render(*, team: int, tag: protocol.Nametag):
         + [loaded_digits[int(d)] for d in str(team)]
     )
 
-    state = tag_data.TagState(b"EMO", number=team)
-
     await tag.set_brightness(255)
     await tag.set_speed(192)
     await tag.set_mode(2)
     await tag.show_glyphs(glyphs)
-    await stash_state.write(tag=tag, state=state)
+    await tag.write_stash(bytes(tag_data.TagState(b"EMO", number=team)))

@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 import attr
 import PIL.Image  # type: ignore
 
-from lobby_game import stash_state, tag_data
+from lobby_game import tag_data
 from nametag import aseprite_loader, protocol
 
 art_dir = Path(__file__).resolve().parent.parent / "art"
@@ -22,8 +22,6 @@ KERNING = {
     ("T", "A"): -1,
     ("T", "J"): -1,
 }
-
-STATE_STRUCT = struct.Struct("<4ph")
 
 state_memory: Dict[str, tag_data.TagState] = {}
 
@@ -78,11 +76,11 @@ def image_text(
     return pasted
 
 
-def content_frames(
-    content: tag_data.DisplayContent,
+def program_frames(
+    program: tag_data.DisplayProgram,
 ) -> List[PIL.Image.Image]:
     frames: List[PIL.Image.Image] = []
-    for scene in content.scenes:
+    for scene in program.scenes:
         image_name = scene.image_name
         image_path = (game_dir / f"{image_name}.ase") if image_name else None
         font_dir = art_dir / ("font-bold" if scene.bold else "font")
@@ -108,28 +106,28 @@ def content_frames(
             frames.append(image)
             frames.append(image)
 
-        if len(content.scenes) > 1:
+        if len(program.scenes) > 1:
             frames.append(get_image(None))
 
     return frames
 
 
-async def render_content(
+async def render_program(
     *,
-    content: tag_data.DisplayContent,
+    program: tag_data.DisplayProgram,
     tag: protocol.Nametag,
 ):
     await tag.set_brightness(255)
-    await tag.show_frames(content_frames(content), msec=500)
-    await stash_state.write(tag=tag, state=content.new_state)
+    await tag.show_frames(program_frames(program), msec=500)
+    await tag.write_stash(bytes(program.new_state))
 
 
 def render_to_file(
-    *, content: tag_data.DisplayContent, path: Path, zoom: int = 1
+    *, program: tag_data.DisplayProgram, path: Path, zoom: int = 1
 ):
     frames = [
         f.convert("P").resize((f.size[0] * zoom, f.size[1] * zoom))
-        for f in content_frames(content)
+        for f in program_frames(program)
     ]
     frames[0].save(
         path,
@@ -157,7 +155,7 @@ if __name__ == "__main__":  # For testing
     parser.add_argument("--zoom", type=int, default=15)
 
     args = parser.parse_args()
-    content = tag_data.DisplayContent(
+    program = tag_data.DisplayProgram(
         new_state=tag_data.TagState(phase=b"TST"),
         scenes=[],
     )
@@ -168,7 +166,7 @@ if __name__ == "__main__":  # For testing
         scene.text = "".join(parts[1:2])
         scene.bold = "bold" in parts[2:]
         scene.blink = "blink" in parts[2:]
-        content.scenes.append(scene)
+        program.scenes.append(scene)
 
-    render_to_file(content=content, path=args.save_image, zoom=args.zoom)
+    render_to_file(program=program, path=args.save_image, zoom=args.zoom)
     print(f"Wrote image: {args.save_image}")

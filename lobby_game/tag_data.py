@@ -1,6 +1,6 @@
 import struct
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, List, Optional
 
 import attr
 import cattr
@@ -13,6 +13,17 @@ class TagState:
     phase: bytes
     number: int = 0  # 16 bit signed
     string: bytes = b""  # Up to 12 bytes
+
+    def __bytes__(self):
+        return _state_struct.pack(self.phase, self.number) + self.string
+
+    @staticmethod
+    def from_bytes(data: bytes) -> Optional["TagState"]:
+        if len(data) >= _state_struct.size:
+            fixed, tail = data[: _state_struct.size], data[_state_struct.size :]
+            phase, number = _state_struct.unpack(fixed)
+            return TagState(phase=phase, number=number, string=tail)
+        return None
 
 
 @attr.frozen
@@ -43,7 +54,7 @@ class DisplayScene:
 
 
 @attr.define
-class DisplayContent:
+class DisplayProgram:
     new_state: TagState
     scenes: List[DisplayScene]
 

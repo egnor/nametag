@@ -21,6 +21,14 @@ class ProtocolError(BluefruitError):
     pass
 
 
+@attr.frozen
+class StashState:
+    data: bytes
+    from_backup: bool
+    stash_displaced: bool
+    backup_monotime: float
+
+
 class Nametag:
     def __init__(self, *, adapter: Bluefruit, dev: Device):
         tag_id = Nametag.id_if_nametag(dev)
@@ -103,52 +111,51 @@ class Nametag:
         if not read.startswith(packet):
             raise ProtocolError(f"Sent stash {packet!r}, read back {read!r}")
 
-        stash_backup[self.id] = StashBackup(data, time.monotonic(), False)
         logger.debug(f"[{self.id}] Wrote stash: {data!r} (=> backup)")
+        state = stash_backup[self.id] = StashState(
+            data=data,
+            from_backup=True,
+            stash_displaced=False,
+            backup_monotime=time.monotonic(),
+        )
 
-    async def read_stash(self) -> Optional[bytes]:
+    async def read_stash(self) -> Optional[StashState]:
         packet = await self.adapter.read(self.dev, 3)
         if len(packet) > 2:
             size = packet[0] ^ 0x80
             data = packet[2 : 2 + size]
             if len(data) == size and packet[1] == Nametag._stash_crc(data):
-                monotime = time.monotonic()
-                stash_backup[self.id] = StashBackup(data, monotime, False)
                 logger.debug(f"[{self.id}] Read stash: {data!r} (=> backup)")
-                return data
+                state = stash_backup[self.id] = StashState(
+                    data=data,
+                    from_backup=False,
+                    stash_displaced=False,
+                    backup_monotime=time.monotonic(),
+                )
+                return state
 
         backup = stash_backup.get(self.id)
         if not backup:
             logger.warning(f"[{self.id}] No stash ({packet!r}), no backup")
             return None
 
-        if not backup.active:
-            logger.warning(
-                f"[{self.id}] No stash ({packet!r}), inactive backup"
-            )
-            return None
-
-        age = time.monotonic() - backup.monotime
-        if age > 120:
-            logger.warning(
-                f"[{self.id}] No stash ({packet!r}), old backup ({age:.1f}s)"
-            )
-            return None
-
+        backup = attr.evolve(backup, from_backup=True)
+        age = backup.backup_monotime - time.monotonic()
         logger.warning(
-            f"[{self.id}] No stash ({packet!r}), using backup "
-            f"({age:.1f}s old): {backup.data!r}"
+            f"[{self.id}] No stash ({packet!r}), using backup ({age:.1f}s old"
+            f"{', displaced' if backup.stash_displaced else ''}): "
+            f"{backup.data!r}"
         )
-        return backup.data
+        return backup
 
     async def flush(self):
         await self.adapter.flush(self.dev)
 
     async def send_raw_packet(self, packet: bytes):
         backup = stash_backup.get(self.id)
-        if backup and not backup.active:
-            logger.debug(f"[{self.id}] Stash backup active: {backup.data!r}")
-            backup.active = True  # Stash is now disrupted; enable backup.
+        if backup and not backup.stash_displaced:
+            logger.debug(f"[{self.id}] Stash displaced: {backup.data!r}")
+            stash_backup[self.id] = attr.evolve(backup, stash_displaced=True)
         await self.adapter.write(self.dev, 3, packet)
 
     async def send_short_message(self, data: bytes, *, tag: int):
@@ -210,11 +217,4 @@ class Nametag:
         return b"\1" + escape123(sized_typed) + b"\3"
 
 
-@attr.define
-class StashBackup:
-    data: bytes
-    monotime: float
-    active: bool
-
-
-stash_backup: Dict[str, StashBackup] = {}
+stash_backup: Dict[str, StashState] = {}

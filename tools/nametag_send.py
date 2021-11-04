@@ -77,8 +77,8 @@ async def send_to_nametag(tag: protocol.Nametag, args):
 async def talk_to_nametag(tag: protocol.Nametag, args):
     print("Connected, reading data stash...")
     stash = await tag.read_stash()
-    if stash:
-        print(f"Found stash ({stash.hex()}), sending...")
+    if stash and stash.data:
+        print(f"Found stash ({stash.data.hex()}), sending...")
     else:
         print("No data stash, sending...")
     for r in range(args.repeat):

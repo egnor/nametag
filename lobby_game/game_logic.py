@@ -1,9 +1,11 @@
 import logging
+import time
 from typing import List, Optional
 
 import attr
 
 from lobby_game import tag_data
+from nametag import protocol
 
 FLAVOR_START = {"A": "TWIN", "B": "MAN", "C": "MOTHER"}
 
@@ -108,16 +110,18 @@ for reversible in NEXT_WORD[2], NEXT_WORD[3]:
         reversible[b] = a
 
 
-def content_for_tag(
+def program_for_tag(
     ghost_id: int,
     config: tag_data.TagConfig,
-    state: Optional[tag_data.TagState],
-) -> Optional[tag_data.DisplayContent]:
+    stash: Optional[protocol.StashState],
+) -> Optional[tag_data.DisplayProgram]:
     Scene = tag_data.DisplayScene
     State = tag_data.TagState
 
     start_word = FLAVOR_START.get(config.flavor, "BADTAG")
     end_word = FLAVOR_END.get(config.flavor, "BADTAG")
+
+    state = State.from_bytes(stash.data) if stash else None
 
     if not ghost_id:  # Staff station
         if state and (state.phase in (b"GAM", b"WIN")):
@@ -125,7 +129,7 @@ def content_for_tag(
             logging.info(f'{config} Phase "{phase}" -> No change at staff')
             return None
 
-        return tag_data.DisplayContent(
+        return tag_data.DisplayProgram(
             new_state=State(b"GAM", string=start_word.encode()),
             scenes=[
                 Scene(f"need-tag{config.flavor}", end_word, bold=True),
@@ -135,7 +139,7 @@ def content_for_tag(
         )
 
     if not state:
-        return tag_data.DisplayContent(
+        return tag_data.DisplayProgram(
             new_state=State(b"RST"),
             scenes=[Scene("tag-reset")],
         )
@@ -144,6 +148,8 @@ def content_for_tag(
         phase = state.phase.decode(errors="replace")
         logging.info(f'{config} Phase "{phase}" -> No change (non-GAM)')
         return None
+
+    # TODO: Detect "suspicious" state and insert a "restored from backup" scene
 
     last_word = state.string.decode(errors="replace")
     last_ghost = state.number
@@ -156,7 +162,7 @@ def content_for_tag(
     next_word = NEXT_WORD.get(ghost_id, {}).get(last_word)
     if next_word == end_word:
         logging.info(f'{log_prefix} => "{next_word}" success!!!')
-        return tag_data.DisplayContent(
+        return tag_data.DisplayProgram(
             new_state=State(b"WIN"),
             scenes=[
                 Scene(f"accept-ghost{ghost_id}", f'"{last_word}"'),
@@ -166,7 +172,7 @@ def content_for_tag(
 
     if next_word:
         logging.info(f'{log_prefix} => "{next_word}" advance')
-        return tag_data.DisplayContent(
+        return tag_data.DisplayProgram(
             new_state=State(b"GAM", number=ghost_id, string=next_word.encode()),
             scenes=[
                 Scene(f"accept-ghost{ghost_id}", f'"{last_word}"'),
@@ -182,7 +188,7 @@ def content_for_tag(
     restart = CHECKPOINT.get(last_word, start_word)
     if last_word == restart:
         logging.info(f'{log_prefix} X> "{restart}" retry')
-        return tag_data.DisplayContent(
+        return tag_data.DisplayProgram(
             new_state=State(b"GAM", number=ghost_id, string=restart.encode()),
             scenes=[
                 Scene(f"reject-ghost{ghost_id}", f'"{last_word}"'),
@@ -193,7 +199,7 @@ def content_for_tag(
     if ghost_id == NEXT_GHOST.get(restart, 0):
         skip = NEXT_WORD[ghost_id][restart]
         logging.info(f'{log_prefix} X> "{restart}" >> "{skip}" reskip')
-        return tag_data.DisplayContent(
+        return tag_data.DisplayProgram(
             new_state=State(b"GAM", number=ghost_id, string=skip.encode()),
             scenes=[
                 Scene(f"reject-ghost{ghost_id}", f'"{last_word}"'),
@@ -210,7 +216,7 @@ def content_for_tag(
 
     logging.info(f'{log_prefix} X> "{restart}" restart')
     new_state = State(b"GAM", number=ghost_id, string=restart.encode())
-    return tag_data.DisplayContent(
+    return tag_data.DisplayProgram(
         new_state=new_state,
         scenes=[
             Scene(f"reject-ghost{ghost_id}", f'"{last_word}"'),
@@ -224,7 +230,7 @@ if __name__ == "__main__":
     import argparse
 
     from lobby_game import render_game
-    from nametag import logging_setup
+    from nametag import logging_setup, protocol
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--ghost_id", type=int, default=1)
@@ -233,6 +239,9 @@ if __name__ == "__main__":
     parser.add_argument("--old_ghost", type=int, default=0)
     parser.add_argument("--old_word", default="LEAST")
     parser.add_argument("--save_image", default="tmp.gif")
+    parser.add_argument("--stash_backup", type=bool, default=False)
+    parser.add_argument("--stash_displaced", type=bool, default=False)
+    parser.add_argument("--stash_age", type=float, default=0)
     parser.add_argument("--zoom", type=int, default=15)
     args = parser.parse_args()
 
@@ -244,18 +253,25 @@ if __name__ == "__main__":
         string=args.old_word.encode(),
     )
 
+    stash = protocol.StashState(
+        data=bytes(state),
+        from_backup=args.stash_backup,
+        stash_displaced=args.stash_displaced,
+        backup_monotime=time.monotonic() - args.stash_age,
+    )
+
     print(
         f"Tag: ghost={args.ghost_id} flavor=[{tag.flavor}] "
         f"state=[{state.phase.decode()} ghost={state.number} "
         f'word="{state.string.decode()}"]'
     )
 
-    content = content_for_tag(ghost_id=args.ghost_id, config=tag, state=state)
-    if not content:
-        print("=> No display!")
+    program = program_for_tag(ghost_id=args.ghost_id, config=tag, stash=stash)
+    if not program:
+        print("=> No display program!")
     else:
-        print(f"=> {len(content.scenes)} scenes:")
-        for scene in content.scenes:
+        print(f"=> {len(program.scenes)} scenes:")
+        for scene in program.scenes:
             print(
                 f'   [{scene.image_name}] "{scene.text}"'
                 f"{' +bold' if scene.bold else ''}"
@@ -263,6 +279,6 @@ if __name__ == "__main__":
             )
 
         render_game.render_to_file(
-            content=content, path=args.save_image, zoom=args.zoom
+            program=program, path=args.save_image, zoom=args.zoom
         )
         print(f"Wrote image: {args.save_image}")
