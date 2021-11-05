@@ -156,7 +156,7 @@ def program_for_tag(
     log_prefix = f'{config} G{last_ghost} "{last_word}" :: G{ghost_id}'
 
     if last_ghost == ghost_id:
-        logging.info(f"{log_prefix} -> No change (revisit)")
+        logging.info(f"{log_prefix} -> No change (same station)")
         return None
 
     next_word = NEXT_WORD.get(ghost_id, {}).get(last_word)

@@ -33,7 +33,7 @@ class Nametag:
     def __init__(self, *, adapter: Bluefruit, dev: Device):
         tag_id = Nametag.id_if_nametag(dev)
         if not tag_id:
-            raise ValueError("Device ({dev.addr}) is not a Nametag")
+            raise ValueError(f"Device ({dev.addr}) is not a Nametag")
         self.adapter = adapter
         self.dev = dev
         self.id = tag_id
@@ -140,7 +140,7 @@ class Nametag:
             return None
 
         backup = attr.evolve(backup, from_backup=True)
-        age = backup.backup_monotime - time.monotonic()
+        age = time.monotonic() - backup.backup_monotime
         logger.warning(
             f"[{self.id}] No stash ({packet!r}), using backup ({age:.1f}s old"
             f"{', displaced' if backup.stash_displaced else ''}): "
@@ -183,8 +183,8 @@ class Nametag:
 
                 try:
                     notify = await asyncio.wait_for(notify_future, timeout=3.0)
-                except asyncio.TimeoutError:
-                    raise ProtocolError("Notify timeout")
+                except asyncio.TimeoutError as e:
+                    raise ProtocolError("Notify timeout") from e
 
                 expect = Nametag._encode(struct.pack(">xHx", index), tag=tag)
                 assert expect[-2:] == b"\0\3"
@@ -196,7 +196,9 @@ class Nametag:
                     or notify[-1:] != expect[-1:]
                     or len(notify[len(expect) - 2 : -1]) > 2
                 ):
-                    raise ProtocolError("Bad reply {notify}, expected {expect}")
+                    raise ProtocolError(
+                        f"Bad reply {notify!r}, expected {expect!r}"
+                    )
 
     @staticmethod
     def id_if_nametag(dev: Device) -> Optional[str]:

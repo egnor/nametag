@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class ScannerOptions:
     port_regex: str = "VID:PID=10C4:EA60"  # Serial.hwid / Serial.device
     success_delay: float = 30.0
-    attempt_delay: float = 0.0
+    attempt_delay: float = 0.5
     loop_delay: float = 0.1
     maximum_age: float = 5.0
     minimum_rssi: int = -80
@@ -112,26 +112,28 @@ async def scan_and_spawn(
 
             started = id_attempt_mono.get(id, 0) > id_success_mono.get(id, 0)
 
+            text = f"{id}{dev.rssi:+d}"
+
             if dev.fully_connected:
-                id_status[id] = f"|{id}|"
+                id_status[id] = f"|{text}|"
             elif not dev.fully_disconnected:
-                id_status[id] = f":{id}:"
+                id_status[id] = f":{text}:"
             elif id in id_task:
-                id_status[id] = f".{id}."
+                id_status[id] = f".{text}."
             elif monotime < delay_end:
-                id_status[id] = f"+{id}+"
+                id_status[id] = f"+{text}+"
             elif dev.monotime < monotime - options.maximum_age:
-                id_status[id] = f"/{id}/"
+                id_status[id] = f"/{text}/"
             elif (dev.rssi or -100) <= options.minimum_rssi and not started:
-                id_status[id] = f"-{id}-"
+                id_status[id] = f"-{text}-"
             elif not adapter.ready_to_connect(dev):
-                id_status[id] = f"({id})"
+                id_status[id] = f"({text})"
             else:
-                id_status[id] = f"#{id}#" if started else f"*{id}*"
+                id_status[id] = f"#{text}#" if started else f"*{text}*"
                 spawn_connection(adapter=adapter, id=id, dev=dev)
 
             for id in id_task.keys():
-                id_status.setdefault(id, f"_{id}_")
+                id_status.setdefault(id, f"_{text}_")
 
         return id_status
 
@@ -142,7 +144,7 @@ async def scan_and_spawn(
             while stop_received is None:
                 id_status = poll_adapter(adapter)
                 monotime = time.monotonic()
-                spawned = any("*" in s for s in id_status.values())
+                spawned = any("*" in s or "#" in s for s in id_status.values())
                 if monotime >= next_status_monotime or spawned:
                     status = " ".join(s for id, s in sorted(id_status.items()))
                     logger.info("Tags: " + (status or "(none)"))
