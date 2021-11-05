@@ -110,6 +110,8 @@ async def scan_and_spawn(
                 ]
             )
 
+            started = id_attempt_mono.get(id, 0) > id_success_mono.get(id, 0)
+
             if dev.fully_connected:
                 id_status[id] = f"|{id}|"
             elif not dev.fully_disconnected:
@@ -120,12 +122,12 @@ async def scan_and_spawn(
                 id_status[id] = f"+{id}+"
             elif dev.monotime < monotime - options.maximum_age:
                 id_status[id] = f"/{id}/"
-            elif dev.rssi <= options.minimum_rssi or not dev.rssi:
+            elif (dev.rssi or -100) <= options.minimum_rssi and not started:
                 id_status[id] = f"-{id}-"
             elif not adapter.ready_to_connect(dev):
                 id_status[id] = f"({id})"
             else:
-                id_status[id] = f"*{id}*"
+                id_status[id] = f"#{id}#" if started else f"*{id}*"
                 spawn_connection(adapter=adapter, id=id, dev=dev)
 
             for id in id_task.keys():
