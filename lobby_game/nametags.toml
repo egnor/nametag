@@ -47,8 +47,6 @@
 7F29 = { team = 47, flavor = "C" }
 7FB9 = { team = 48, flavor = "C" }
 
-7E47 = { team = 49, flavor = "C" }
-
 568B = { note = "test device, red color" }
 78E7 = { note = "test device, blue color" }
 94A0 = { note = "test device, slab type" }
