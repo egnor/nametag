@@ -102,39 +102,37 @@ async def scan_and_spawn(
         id_dev.sort(key=lambda id_dev: priority(id_dev[0]))
         id_status: Dict[str, str] = {}
         for id, dev in id_dev:
-            delay_end = max(
-                id_dict.get(id, -delay_opt) + delay_opt
-                for id_dict, delay_opt in [
-                    (id_success_mono, options.success_delay),
-                    (id_attempt_mono, options.attempt_delay),
-                ]
-            )
+            attempt = id_attempt_mono.get(id)
+            success = id_success_mono.get(id)
+            success_retry = success + options.success_delay if success else 0
+            attempt_retry = attempt + options.attempt_delay if attempt else 0
+            started = (attempt or 0) > (success or 0)
 
-            started = id_attempt_mono.get(id, 0) > id_success_mono.get(id, 0)
-
-            text = f"{id}{dev.rssi:+d}"
-
+            status = f"{id}{dev.rssi:+02d}"
             if dev.fully_connected:
-                id_status[id] = f"|{text}|"
+                status = f"|{status}|"
             elif not dev.fully_disconnected:
-                id_status[id] = f":{text}:"
+                status = f":{status}:"
             elif id in id_task:
-                id_status[id] = f".{text}."
-            elif monotime < delay_end:
-                id_status[id] = f"+{text}+"
-            elif dev.monotime < monotime - options.maximum_age:
-                id_status[id] = f"/{text}/"
+                status = f".{status}."
+            elif monotime < success_retry and not started:
+                status = f"+{status}+"
+            elif monotime < attempt_retry:
+                status = f"-{status}{'!' if started else '-'}"
+            elif dev.monotime < monotime - options.maximum_age and not started:
+                status = f"?{status}?"
             elif (dev.rssi or -100) <= options.minimum_rssi and not started:
-                id_status[id] = f"-{text}-"
+                status = f"/{status}/"
             elif not adapter.ready_to_connect(dev):
-                id_status[id] = f"({text})"
+                status = f"^{status}{'!' if started else '^'}"
             else:
-                id_status[id] = f"#{text}#" if started else f"*{text}*"
+                status = f"*{status}{'!' if started else '*'}"
                 spawn_connection(adapter=adapter, id=id, dev=dev)
 
-            for id in id_task.keys():
-                id_status.setdefault(id, f"_{text}_")
+            id_status[id] = status
 
+        for id in id_task.keys():
+            id_status.setdefault(id, f"_{id}____")
         return id_status
 
     async def scan_with_adapter(adapter: bluefruit.Bluefruit):

@@ -17,7 +17,7 @@ async def check_tag(
 ):
     config = tag_config.get(tag.id) or tag_data.TagConfig(tag.id)
     if not config.team:
-        logging.info(f"{config} No team assignment, disconnecting...")
+        logging.error(f"{config} No team assignment, ignoring tag...")
         return
 
     logging.info(f"{config} Connected, reading state stash...")
@@ -41,6 +41,7 @@ async def run(args):
     tag_config = tag_data.load_configs(args.config)
     options = scanner.ScannerOptions()
     options.success_delay = 86400
+    options.minimum_rssi = -100
     await scanner.scan_and_spawn(
         options=options,
         runner=check_tag,
