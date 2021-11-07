@@ -121,10 +121,11 @@ def program_for_tag(
     start_word = FLAVOR_START.get(config.flavor, "BADTAG")
     end_word = FLAVOR_END.get(config.flavor, "BADTAG")
 
+    from_backup = stash.from_backup if stash else False
     state = State.from_bytes(stash.data) if stash else None
 
     if not ghost_id:  # Staff station
-        if state and (state.phase in (b"GAM", b"WIN")):
+        if state and state.phase in (b"GAM", b"WIN") and not from_backup:
             phase = state.phase.decode(errors="replace")
             logging.info(f'{config} Phase "{phase}" -> No change at staff')
             return None
@@ -149,15 +150,29 @@ def program_for_tag(
         logging.info(f'{config} Phase "{phase}" -> No change (non-GAM)')
         return None
 
-    # TODO: Detect "suspicious" state and insert a "restored from backup" scene
+    # TODO: Insert a "restored from backup" scene
 
     last_word = state.string.decode(errors="replace")
     last_ghost = state.number
     log_prefix = f'{config} G{last_ghost} "{last_word}" :: G{ghost_id}'
 
     if last_ghost == ghost_id:
-        logging.info(f"{log_prefix} -> No change (same station)")
-        return None
+        if stash and stash.from_backup:
+            logging.info(f'{log_prefix} -> "{last_word}" (backup refresh)')
+            return tag_data.DisplayProgram(
+                new_state=state,
+                scenes=[
+                    Scene(
+                        f"give-ghost{ghost_id}",
+                        f'"{last_word}"',
+                        bold=True,
+                        blink=True,
+                    )
+                ],
+            )
+        else:
+            logging.info(f"{log_prefix} -> No change (same station)")
+            return None
 
     next_word = NEXT_WORD.get(ghost_id, {}).get(last_word)
     if next_word == end_word:
