@@ -18,6 +18,7 @@ NEXT_WORD = {
         for w in {
             "AGO",
             "AWAY",
+            "AWRY",
             "BOTHER",
             "LEAST",
             "MOTHER",
@@ -37,17 +38,17 @@ NEXT_WORD = {
         k: v
         for a, b in [
             ("AGE", "AGO"),
-            ("AWAY", "SWAY"),
+            ("AWAY", "AWRY"),
             ("COME", "HOME"),
             ("EAST", "MAST"),
             ("FATHER", "RATHER"),
             ("GO", "SO"),
             ("HUT", "OUT"),
-            ("LEAST", "YEAST"),
+            ("LEAST", "LEASH"),
             ("LOSE", "NOSE"),
             ("LOST", "MOST"),
             ("MAN", "MAP"),
-            ("MOTHER", "BOTHER"),
+            ("MOTHER", "MOSHER"),
             ("OMEN", "OPEN"),
             ("OTHER", "OCHER"),
             ("PEN", "PUN"),
@@ -59,6 +60,7 @@ NEXT_WORD = {
             ("WIN", "WON"),
             ("WIT", "WIG"),
             ("WOMAN", "WOMEN"),
+            ("WRY", "WHY"),
         ]
         for k, v in ((a, b), (b, a))  # bidirectional
     },
