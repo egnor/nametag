@@ -46,7 +46,7 @@ NEXT_WORD = {
             ("LEAST", "YEAST"),
             ("LOSE", "NOSE"),
             ("LOST", "MOST"),
-            ("MAN", "MEN"),
+            ("MAN", "MAP"),
             ("MOTHER", "BOTHER"),
             ("OMEN", "OPEN"),
             ("OTHER", "OCHER"),
@@ -62,7 +62,7 @@ NEXT_WORD = {
         ]
         for k, v in ((a, b), (b, a))  # bidirectional
     },
-    # Opposite (Hyde) -- inverses automatically added
+    # Opposite (Jekyll) -- inverses automatically added
     3: {
         k: v
         for a, b in [
