@@ -93,8 +93,11 @@ CHECKPOINT = {
     "COME": "GO",
     "HOME": "GO",
     "AWAY": "GO",
+    "AWRY": "GO",
     "SWAY": "GO",
     "WAY": "GO",
+    "WHY": "GO",
+    "WRY": "GO",
     "WAR": "GO",
 }
 
