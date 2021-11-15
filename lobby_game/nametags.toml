@@ -27,6 +27,7 @@
 7ADD = { team = 27, flavor = "A" }
 7D7B = { team = 28, flavor = "A" }
 7E00 = { team = 29, flavor = "A" }
+
 7E4C = { team = 30, flavor = "B" }
 7E4E = { team = 31, flavor = "B" }
 7E51 = { team = 32, flavor = "B" }
@@ -37,6 +38,7 @@
 7EB0 = { team = 37, flavor = "B" }
 7EB1 = { team = 38, flavor = "B" }
 7EC0 = { team = 39, flavor = "B" }
+
 7EC5 = { team = 40, flavor = "C" }
 7ED0 = { team = 41, flavor = "C" }
 7EDD = { team = 42, flavor = "C" }
@@ -46,6 +48,17 @@
 7F14 = { team = 46, flavor = "C" }
 7F29 = { team = 47, flavor = "C" }
 7FB9 = { team = 48, flavor = "C" }
+24A8 = { team = 49, flavor = "C" }
+2562 = { team = 50, flavor = "C" }
+
+270E = { team = 51, flavor = "B" }
+271B = { team = 52, flavor = "B" }
+29B0 = { team = 53, flavor = "B" }
+790F = { team = 54, flavor = "B" }
+7E1B = { team = 55, flavor = "C" }
+7E35 = { team = 56, flavor = "C" }
+7E6F = { team = 57, flavor = "C" }
+7F19 = { team = 58, flavor = "C" }
 
 568B = { note = "test device, red color" }
 78E7 = { note = "test device, blue color" }
