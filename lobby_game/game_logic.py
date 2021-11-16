@@ -107,7 +107,7 @@ CHECKPOINT = {
 
 NEXT_GHOST = {
     "TWIN": 1,
-    "MAN": 2,
+    "MAN": 3,
     "MOTHER": 1,
     "GO": 3,
 }
