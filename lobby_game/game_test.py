@@ -19,12 +19,13 @@ def try_ghost(
     state: tag_data.TagState,
     seen: Set[Tuple[tag_data.TagConfig, tag_data.TagState]],
     dead_ends: Dict[int, Set[str]],
+    win_paths: Set[Tuple[int]],
     history: List[int],
 ):
     stash = protocol.StashState(
         data=bytes(state),
         from_backup=False,
-        stash_displaced=False,
+        known_displaced=False,
         backup_monotime=0,
     )
 
@@ -38,16 +39,19 @@ def try_ghost(
     name = f"{config.flavor}{''.join(str(g) for g in history)}.gif"
     render_game.render_to_file(program=program, path=out_dir / name, zoom=15)
 
+    accepted = False
     for scene in program.scenes:
         name = scene.image_name or ""
-        bad_prefixes = ("reject-",)
-        if any(name.startswith(p) for p in bad_prefixes):
+        if name.startswith("reject-"):
             dead_ends.setdefault(ghost_id, set()).add(state.string.decode())
 
-        good_prefixes = ("need-", "accept-", "success")
-        if any(name.startswith(p) for p in good_prefixes):
-            break
-    else:
+        if name.startswith("success"):
+            win_paths.add(tuple(history))
+
+        if any(name.startswith(p) for p in ("need-", "accept-", "success")):
+            accepted = True
+
+    if not accepted:
         return
 
     revisit = (config, program.new_state) in seen
@@ -65,23 +69,34 @@ def try_ghost(
     )
 
     if not revisit:
-        state = program.new_state
         for next in (1, 2, 3):
-            try_ghost(next, config, state, seen, dead_ends, history + [next])
+            try_ghost(
+                ghost_id=next,
+                config=config,
+                state=program.new_state,
+                seen=seen,
+                dead_ends=dead_ends,
+                win_paths=win_paths,
+                history=history + [next])
 
 
 logging.getLogger().setLevel(logging.WARNING)
 
+dead_ends: Dict[int, Set[str]] = {}
 for flavor in game_logic.FLAVOR_START.keys():
     print(f"=== {flavor} ===")
     config = tag_data.TagConfig(id="XXXX", flavor=flavor)
     state = tag_data.TagState(phase=b"ZZZ")
-    dead_ends: Dict[int, Set[str]] = {}
-    try_ghost(0, config, state, set(), dead_ends, [])
-    try_ghost(1, config, state, set(), dead_ends, [])  # verify reset logic
+    win_paths: Set[Tuple[int]] = set()
+    try_ghost(0, config, state, set(), dead_ends, win_paths, [])
+    try_ghost(1, config, state, set(), dead_ends, win_paths, [])  # test reset
+    print()
+    print("Good paths:")
+    for path in sorted(win_paths):
+        print("  " + " => ".join(f"{g}" for g in path))
     print()
 
 for ghost_id, ends in sorted(dead_ends.items()):
     print(f"=== DEAD ENDS FOR G{ghost_id} ===")
-    print(", ".join(ends))
+    print(", ".join(sorted(ends)))
     print()

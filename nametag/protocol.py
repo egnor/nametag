@@ -25,7 +25,7 @@ class ProtocolError(BluefruitError):
 class StashState:
     data: bytes
     from_backup: bool
-    stash_displaced: bool
+    known_displaced: bool
     backup_monotime: float
 
 
@@ -115,7 +115,7 @@ class Nametag:
         state = stash_backup[self.id] = StashState(
             data=data,
             from_backup=True,
-            stash_displaced=False,
+            known_displaced=False,
             backup_monotime=time.monotonic(),
         )
 
@@ -129,7 +129,7 @@ class Nametag:
                 state = stash_backup[self.id] = StashState(
                     data=data,
                     from_backup=False,
-                    stash_displaced=False,
+                    known_displaced=False,
                     backup_monotime=time.monotonic(),
                 )
                 return state
@@ -143,7 +143,7 @@ class Nametag:
         age = time.monotonic() - backup.backup_monotime
         logger.warning(
             f"[{self.id}] No stash ({packet!r}), using backup ({age:.1f}s old"
-            f"{', displaced' if backup.stash_displaced else ''}): "
+            f"{', displaced' if backup.known_displaced else ''}): "
             f"{backup.data!r}"
         )
         return backup
@@ -153,9 +153,9 @@ class Nametag:
 
     async def send_raw_packet(self, packet: bytes):
         backup = stash_backup.get(self.id)
-        if backup and not backup.stash_displaced:
+        if backup and not backup.known_displaced:
             logger.debug(f"[{self.id}] Stash displaced: {backup.data!r}")
-            stash_backup[self.id] = attr.evolve(backup, stash_displaced=True)
+            stash_backup[self.id] = attr.evolve(backup, known_displaced=True)
         await self.adapter.write(self.dev, 3, packet)
 
     async def send_short_message(self, data: bytes, *, tag: int):

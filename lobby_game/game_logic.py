@@ -21,6 +21,7 @@ NEXT_WORD = {
             "AWRY",
             "BOTHER",
             "LEAST",
+            "MAN",
             "MOTHER",
             "OPEN",
             "SAGE",
@@ -48,12 +49,15 @@ NEXT_WORD = {
             ("LOSE", "NOSE"),
             ("LOST", "MOST"),
             ("MAN", "MAP"),
+            ("MEN", "MET"),
             ("MOTHER", "MOSHER"),
+            ("OFF", "OAF"),
             ("OMEN", "OPEN"),
+            ("ON", "AN"),
             ("OTHER", "OCHER"),
             ("PEN", "PUN"),
             ("SAME", "SAGE"),
-            ("SHUT", "SHUN"),
+            ("SHUT", "SMUT"),
             ("TWIN", "TWIT"),
             ("WAY", "WAR"),
             ("WEST", "REST"),
@@ -64,7 +68,7 @@ NEXT_WORD = {
         ]
         for k, v in ((a, b), (b, a))  # bidirectional
     },
-    # Opposite (Jekyll) -- inverses automatically added
+    # Opposite (Jekyll)
     3: {
         k: v
         for a, b in [
@@ -276,7 +280,7 @@ if __name__ == "__main__":
     stash = protocol.StashState(
         data=bytes(state),
         from_backup=args.stash_backup,
-        stash_displaced=args.stash_displaced,
+        known_displaced=args.stash_displaced,
         backup_monotime=time.monotonic() - args.stash_age,
     )
 
