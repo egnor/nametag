@@ -1,0 +1,44 @@
+[project]
+name = "nametag"
+version = "0.1"
+
+dependencies = [
+    "Pillow",
+    "crcmod",
+    "attrs",
+    "cattrs",
+    "tomlkit",
+    "pyserial",
+    "logfmt",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black==21.7b0",
+    "isort",
+    "mypy",
+    "types-attrs",
+    "emoji",
+    "typed-ast",
+    "types-toml",
+    "adafruit-nrfutil",
+]
+
+[tool.setuptools.package-dir]
+aseprite = "external/py_aseprite/aseprite"
+lobby_game = "lobby_game"
+nametag = "nametag"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 80
+
+[tool.isort]
+profile = "black"
+
+[tool.mypy]
+namespace_packages = true
+explicit_package_bases = true

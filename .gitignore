@@ -1,9 +1,18 @@
-.*.swp
-
-*.pyc
-__pycache__/
-
 arduino/work/
 
+# Python
+*.egg-info
+*.pyc
+__pycache__/
+python_venv/
+
+# Generic, system, text editors
+*~
+.DS_Store
+.~lock.*
+.*.swp
+.vscode/
+.idea/
+*.tmp
 tmp.*
 tmp

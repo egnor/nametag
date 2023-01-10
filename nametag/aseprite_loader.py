@@ -2,11 +2,8 @@ import sys
 from pathlib import Path
 from typing import IO, Optional
 
-import PIL.Image  # type: ignore
-
-source_dir = Path(__file__).resolve().parent.parent
-sys.path.append(str(source_dir / "external" / "py_aseprite"))
 import aseprite  # type: ignore
+import PIL.Image  # type: ignore
 
 
 def image_from_ase(data: bytes, layer_index: Optional[int] = None):
