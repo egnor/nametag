@@ -14,7 +14,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "black==21.7b0",
+    "black",
     "isort",
     "mypy",
     "types-attrs",
@@ -42,3 +42,4 @@ profile = "black"
 [tool.mypy]
 namespace_packages = true
 explicit_package_bases = true
+check_untyped_defs = true

@@ -1,0 +1,70 @@
+search = ["art/font-big", "art/mystery-hunt", "art/emoji"]
+spacing = 2
+mode = 2
+speed = 192
+brightness = 128
+
+[tags]
+
+# BEN
+26E6 = { glyphs = ["leftout:8", "bend", "-", "D"] }
+
+# CHRIS
+7E6F = { glyphs = ["leftout:8", "chart", "-", "@", "+", "is"] }
+
+# EGNOR
+7F14 = { glyphs = ["leftout:8", "egg", "-", "G", "+", "nor"] }
+
+# DAVID (H.)
+24E7 = { glyphs = ["leftout:8", "dad", "+3", "[-roman:0", "6:0", "]-roman", " ", "(", "H", ".", ")"] }
+
+# DAVID (T.)
+24CF = { glyphs = ["leftout:8", "dad", "+3", "[-roman:0", "6:0", "]-roman", " ", "(", "T", ".", ")"] }
+
+# ELAINE
+78BD = { glyphs = ["leftout:8", "[-rev", "ale", "]-rev", "+", "sine", "-", "S"] }
+
+# EVAN
+7E47 = { glyphs = ["leftout:8", "E", "+", "van"] }
+
+# TRONIC
+2A4A = { glyphs = ["leftout:8", "tonic", "+2", "R"] }
+
+# MIA
+29FC = { glyphs = ["leftout:8", "miami", "-", "[-roman:1", "1001:1", "]-roman"] }
+
+# MIKE
+7AD4 = { glyphs = ["leftout:8", "mike"] }
+
+# OFER
+79C2 = { glyphs = ["leftout:8", "[-rev", "firefox", "-", "fix", "]-rev"] }
+
+# PHILIP
+7E97 = { glyphs = ["leftout:8", "phi", "+", "lips", "-", "S"] }
+
+# TAMMY
+7ADD = { glyphs = ["leftout:8", "[-rev", "mat", "]-rev", "+", "[-roman:1", "1000:1", "]-roman", "+", "Y"] }
+
+# TODD
+7E4E = { glyphs = ["leftout:8", "T", "+", "odds", "-", "S"] }
+
+# TYLER
+7EE9 = { glyphs = ["leftout:8", "[-rev", "relay", "-", "A", "+", "T", "]-rev"] }
+
+# WALKER
+ABC0 = { glyphs = ["leftout:8", "W", "+", "talker", "-", "T"] }
+
+# WEI-HWA
+7F1B = { glyphs = ["leftout:8", "weigh", "-", "G", "+", "wag", "-", "G"] }
+
+# YLAINE
+7E3D = { glyphs = ["leftout:8", "[-rev", "italy", "-", "it", "]-rev", "+", "sine", "-", "S"] }
+
+7ED0 = { glyphs = ["E", "X", "T", "R", "A:5", "(", "A", ")"] }
+2562 = { glyphs = ["E", "X", "T", "R", "A:5", "(", "B", ")"] }
+7E35 = { glyphs = ["E", "X", "T", "R", "A:5", "(:1", "C", ")"] }
+
+94A0 = { glyphs = ["crown:3", "M", "E", "T", "A", " ", "C", "Z", "A", "R:3", "crown"] }
+97EA = { glyphs = ["crown:3", "M", "E", "T", "A", " ", "C", "Z", "A", "R:3", "crown"] }
+568B = { glyphs = ["heart:3", "P", "U", "Z", "Z", "L", "E", " ", "C", "Z", "A", "R:3", "bulb"] }
+78E7 = { glyphs = ["sparkles:3", "A", "W", "E", "S", "O", "M", "E:3", "sparkles"] }

@@ -193,7 +193,7 @@ if __name__ == "__main__":
         print(f"  [{tag.id}] connected, reading...")
         stash = await tag.read_stash()
         to_stash = b"HELLO"
-        print(f"  [{tag.id}] stash is {stash}, writing {to_stash}...")
+        print(f"  [{tag.id}] stash is {stash!r}, writing {to_stash!r}...")
         await tag.write_stash(to_stash)
         print(f"  [{tag.id}] wrote, disconnecting...")
 

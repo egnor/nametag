@@ -13,10 +13,11 @@ check_call(["sudo", "apt", "install"] + apt_packages)
 
 print("\n=== Update python virtualenv (pipenv) ===")
 venv_dir = repo_dir / "python_venv"
-if not (venv_dir / "bin/activate.sh").is_file():
+if not (venv_dir / "bin/activate").is_file():
     import venv  # pylint: disable=wrong-import-position
+
     venv.create(venv_dir, symlinks=True, with_pip=True)
-    check_call([venv_dir / "bin/pip", "install", "-e", "."])
+    check_call([venv_dir / "bin/pip", "install", "-e", ".[dev]"])
 
 check_call(["direnv", "allow"])
 print("\n::: Setup complete! :::")

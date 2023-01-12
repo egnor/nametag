@@ -44,9 +44,10 @@ def _asyncio_exception_hook(loop, context):
     exc = context.get("exception")
     if isinstance(exc, KeyboardInterrupt):
         logging.critical("*** KeyboardInterrupt (^C)! ***")
+    elif exc:
+        logging.critical(context["message"], exc_info=(type(exc), exc, None))
     else:
-        exc_info = (type(exc), exc, None) if exc else (None, None, None)
-        logging.critical(context["message"], exc_info=exc_info)
+        logging.critical(context["message"])
 
 
 def enable_debug():

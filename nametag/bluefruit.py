@@ -61,14 +61,13 @@ class Bluefruit:
         self._devs: Dict[str, Device] = {}
         self._handles: Dict[int, Device] = {}
         self._serial: _SerialPort = _SerialPort(port=port or DEFAULT_PORT)
-        self._reader: asyncio.Task = None
 
         self.busy_connecting: Set[str] = set()
         self.totals = self._serial.totals
 
     async def __aenter__(self):
         await self._serial.__aenter__()
-        self._reader = asyncio.create_task(self._reader_task())
+        self._reader: asyncio.Task = asyncio.create_task(self._reader_task())
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
@@ -238,10 +237,10 @@ class Bluefruit:
     def _on_conn_fail_message(self, message):
         addr = message["conn_fail"]
         if isinstance(addr, str):
-            failed = [self._devs.get(addr)]
-            if not failed[0]:
+            if addr not in self._devs:
                 logger.warning(f'Unmatched "conn_fail": {message}')
                 return
+            failed = [self._devs[addr]]
         else:
             failed = list(self._devs.values())
 
@@ -298,7 +297,7 @@ class Bluefruit:
             logger.warning(f'Unmatched "read_fail": {message}')
             return
 
-        exc = BluefruitError(f"[{dev.id}] Read failed: {message}")
+        exc = BluefruitError(f"[{dev.addr}] Read failed: {message}")
         dev.reads[attr] = _update_future(dev.reads[attr], exc=exc)
 
     def _on_scan_message(self, message):
@@ -372,11 +371,7 @@ class _InputMessage(dict):
 class _SerialPort:
     def __init__(self, *, port):
         self._port = port
-        self._serial: pyserial.Serial = None
-        self._from_serial: asyncio.Future = None
-        self._to_serial = None
-        self._fileno = None
-        self.totals = collections.Counter()
+        self.totals: collections.Counter = collections.Counter()
 
     async def __aenter__(self):
         try:
@@ -450,7 +445,7 @@ class _SerialPort:
             exc = PortError("Adapter serial write failed")
             exc.__cause__ = os_error
             self._from_serial = _update_future(self._from_serial, exc=exc)
-            self._to_serial = b""
+            self._to_serial = bytearray()
 
         if not self._to_serial:
             asyncio.get_running_loop().remove_writer(fileno)

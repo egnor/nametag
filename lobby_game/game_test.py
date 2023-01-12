@@ -19,7 +19,7 @@ def try_ghost(
     state: tag_data.TagState,
     seen: Set[Tuple[tag_data.TagConfig, tag_data.TagState]],
     dead_ends: Dict[int, Set[str]],
-    win_paths: Set[Tuple[int]],
+    win_paths: Set[Tuple[int, ...]],
     history: List[int],
 ):
     stash = protocol.StashState(
@@ -77,7 +77,8 @@ def try_ghost(
                 seen=seen,
                 dead_ends=dead_ends,
                 win_paths=win_paths,
-                history=history + [next])
+                history=history + [next],
+            )
 
 
 logging.getLogger().setLevel(logging.WARNING)
@@ -87,7 +88,7 @@ for flavor in game_logic.FLAVOR_START.keys():
     print(f"=== {flavor} ===")
     config = tag_data.TagConfig(id="XXXX", flavor=flavor)
     state = tag_data.TagState(phase=b"ZZZ")
-    win_paths: Set[Tuple[int]] = set()
+    win_paths: Set[Tuple[int, ...]] = set()
     try_ghost(0, config, state, set(), dead_ends, win_paths, [])
     try_ghost(1, config, state, set(), dead_ends, win_paths, [])  # test reset
     print()

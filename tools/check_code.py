@@ -6,26 +6,16 @@ from pathlib import Path
 from subprocess import check_call
 from typing import List
 
-os.chdir(str(Path(__file__).resolve().parent.parent))
+from nametag import logging_setup
 
 
 def run(*args):
     print(f"\n=== {args[0]} ===")
-    check_call(args)
+    repo_dir = Path(__file__).resolve().parent.parent
+    check_call(args, cwd=repo_dir)
 
 
-excludes = ["external/", "arduino/work/"]
-exclude_re = f"({'|'.join(re.escape(e) for e in excludes)})"
-run("black", "-l", "80", "--exclude", f"^/{exclude_re}", ".")
-
-isort_skips: List[str] = sum((["--skip", s] for s in excludes), [])
-run("isort", "--profile", "black", *isort_skips, ".")
-
-run(
-    "mypy",
-    "--namespace-packages",
-    "--explicit-package-bases",
-    "--exclude",
-    exclude_re,
-    ".",
-)
+sources = ["lobby_game", "nametag", "tools"]
+run("black", *sources)
+run("isort", *sources)
+run("mypy", *sources)
